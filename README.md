@@ -1,2 +1,3 @@
-# Draw_Up_A_Play
-basketball play app
+# HS Court App (Modular)
+
+Open `index.html` in a modern browser. Uses ES modules; no build step needed.
