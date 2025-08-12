@@ -57,7 +57,7 @@
         <label>Frame (sec) <input id="dur" type="number" min="0.1" step="0.1" value="1.0" style="width:72px"/></label>
         <label><input id="onion" type="checkbox"/> Onion Skin</label>
         <label><input id="ease" type="checkbox" checked/> Ease</label>
-        <label><input id="flow" type="checkbox"/> Flow (no step stops)</label>
+        <label><input id="flow" type="checkbox" checked/> Flow (no step stops)</label>
         <div class="slider"><span style="font-size:12px;color:#9ca3af">Overlap</span> <input id="overlap" type="range" min="0" max="20" value="2"/> <span id="overlapVal" class="value">2%</span></div>
         <div class="dial" id="dialPlayback" title="Playback speed"></div>
         <div class="dial" id="dialStep" title="Step duration"></div>
@@ -197,6 +197,7 @@ const overrideSel = document.getElementById('overrideSel');
 const pathModeSel = document.getElementById('pathModeSel');
 const curvSel = document.getElementById('curvSel');
 const curvSelVal = document.getElementById('curvSelVal');
+
 // dials / flow / overlap
 let __dialPlaybackValue = 1.0;
 const dialPlayback = document.getElementById('dialPlayback');
@@ -206,8 +207,13 @@ const overlapRange = document.getElementById('overlap');
 const overlapVal = document.getElementById('overlapVal');
 const elTimeline = document.getElementById('timeline');
 const elStatus = document.getElementById('status');
+
 // ensure inpDur exists before any listeners use it
 const inpDur = document.getElementById('dur');
+
+// Show arrows before movement begins on each segment
+const PREVIEW_SEC = 0.9;
+
 
 function setStatus(msg){ elStatus.textContent = msg; }
 function getBallSpeed(){ return Math.max(0.1, parseFloat(ballSpeedSel.value)||1.5); }
@@ -563,6 +569,7 @@ function play(){
     state.toFrame = state.track[state.index + 1].frame;
     state.playStart = performance.now();
     state.passPlan = makePassPlan(state.fromFrame, state.toFrame);
+    state.previewUntil = performance.now() + PREVIEW_SEC;
     updateTimelineUI();
   }
   function finishPlayback(){
@@ -579,6 +586,29 @@ function play(){
     const useEase = chkFlow && chkFlow.checked ? false : chkEase.checked;
     const baseT = useEase ? easeInOutCubic(tRaw) : tRaw;
     const A = state.fromFrame, B = state.toFrame;
+    // --- PREVIEW PHASE: show arrows & (if any) pass line before movement starts
+if (state.previewUntil && now < state.previewUntil) {
+  // lock positions to the start frame (A)
+  applyFrame(A);
+  // draw court + previews + (possible) pass line + sprites
+  drawCourt();
+  // reuse your existing preview overlay (if you added it earlier)
+  if (typeof previewActionsForStep === 'function') {
+    previewActionsForStep(state.index);
+  }
+  if (state.passPlan && state.passPlan.active) {
+    drawPassLine(state.passPlan.start, state.passPlan.end);
+  }
+  drawSprites();
+  requestAnimationFrame(loop);
+  return; // don't advance movement yet
+}
+// first tick after preview: reset playStart so duration timing excludes preview
+if (state.previewUntil) {
+  state.playStart = performance.now();
+  state.previewUntil = 0;
+}
+
     const idxPrev = Math.max(0, state.index-1); const idxNext2 = Math.min(state.track.length-1, state.index+2);
     const F0 = state.track[idxPrev]?.frame || A; const F3 = state.track[idxNext2]?.frame || B;
 
@@ -618,8 +648,73 @@ enforceAllPlayerConstraints(3);
     } else {
       const bi = A.findIndex(o=>o.isBall); if (bi >= 0){ const aBall = A[bi], bBall = B[bi] || aBall; if (bBall.holderId!=null){ ball.holderId = bBall.holderId; ball.holdAngle = (bBall.holdAngle!=null?bBall.holdAngle:ball.holdAngle); updateBallFollow(); } else if (aBall.holderId!=null){ ball.holderId = aBall.holderId; ball.holdAngle = (aBall.holdAngle!=null?aBall.holdAngle:ball.holdAngle); updateBallFollow(); } else { ball.x = aBall.x + (bBall.x - aBall.x)*baseT; ball.y = aBall.y + (bBall.y - aBall.y)*baseT; } }
     }
+    function drawArrow(from, to, style='solid'){
+  ctx.save();
+  if(style==='dashed'){ ctx.setLineDash([8,6]); }
+  ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y);
+  ctx.strokeStyle = '#e11d48'; ctx.lineWidth = 2; ctx.stroke();
+  const ang = Math.atan2(to.y-from.y, to.x-from.x), ah = 10;
+  ctx.beginPath();
+  ctx.moveTo(to.x, to.y);
+  ctx.lineTo(to.x - ah*Math.cos(ang - Math.PI/6), to.y - ah*Math.sin(ang - Math.PI/6));
+  ctx.lineTo(to.x - ah*Math.cos(ang + Math.PI/6), to.y - ah*Math.sin(ang + Math.PI/6));
+  ctx.closePath(); ctx.fillStyle = '#e11d48'; ctx.fill();
+  ctx.restore();
+}
+
+function drawScreenCap(point, normalAngle){
+  ctx.save(); ctx.strokeStyle = '#e11d48'; ctx.lineWidth = 4;
+  const len = 14, a = normalAngle + Math.PI/2;
+  ctx.beginPath();
+  ctx.moveTo(point.x - len*Math.cos(a), point.y - len*Math.sin(a));
+  ctx.lineTo(point.x + len*Math.cos(a), point.y + len*Math.sin(a));
+  ctx.stroke(); ctx.restore();
+}
+
+function previewActionsForStep(stepIdx){
+  const A = state.track[stepIdx]?.frame || deepFrame();
+  const B = state.track[stepIdx+1]?.frame || null;
+  const acts = state.segmentActions[stepIdx] || {};
+  const byIdA = Object.fromEntries(A.map(o=>[o.id,o]));
+  const byIdB = B ? Object.fromEntries(B.map(o=>[o.id,o])) : null;
+
+  for(const pid in acts){
+    const act = acts[pid];
+    const a = byIdA[+pid]; if(!a) continue;
+
+    let to = act?.data?.to;
+    if(byIdB && byIdB[+pid]) to = {x:byIdB[+pid].x, y:byIdB[+pid].y};
+    if(!to) continue;
+    const from = {x:a.x, y:a.y};
+
+    if(act.type==='straight'){
+      drawArrow(from, to, 'solid');
+    } else if(act.type==='random' && act.data?.bez){
+      const {c1,c2} = act.data.bez;
+      ctx.save();
+      ctx.strokeStyle = '#e11d48'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(from.x, from.y);
+      ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, to.x, to.y);
+      ctx.stroke(); ctx.restore();
+      drawArrow({x:to.x-0.01, y:to.y-0.01}, to, 'solid');
+    } else if(act.type==='mimic' && act.data?.points?.length>1){
+      ctx.save(); ctx.strokeStyle = '#e11d48'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
+      ctx.beginPath(); ctx.moveTo(act.data.points[0].x, act.data.points[0].y);
+      for(let i=1;i<act.data.points.length;i++) ctx.lineTo(act.data.points[i].x, act.data.points[i].y);
+      ctx.stroke(); ctx.restore();
+      drawArrow(act.data.points[act.data.points.length-2], to, 'dashed');
+    } else if(act.type==='screen'){
+      drawArrow(from, to, 'solid');
+      const ang = Math.atan2(to.y-from.y, to.x-from.x);
+      drawScreenCap(to, ang);
+    }
+  }
+}
 
     drawEverything(tRaw, dur);
+    if (state.passPlan && state.passPlan.active) {
+  drawPassLine(state.passPlan.start, state.passPlan.end);
+}
     const overlap = (chkFlow && chkFlow.checked) ? (parseFloat(overlapRange.value)||0)/100 : 0;
     if (tRaw >= 1 - overlap) {
       if (state.index >= state.track.length - 2) { finishPlayback(); }
@@ -657,6 +752,14 @@ function updateTimelineUI(){
   });
   btnUndo.disabled=state.track.length===0;
   btnPrev.disabled = btnNext.disabled = state.track.length===0;
+}
+
+function drawEverything(){
+  drawCourt();
+  if(!state.isPlaying){
+    previewActionsForStep(state.index);
+  }
+  drawSprites();
 }
 
 // ===== Save/Load (files) =====
@@ -981,6 +1084,19 @@ function previewActionsForStep(stepIdx){
   const acts = state.segmentActions[stepIdx] || {};
   const byIdA = Object.fromEntries(A.map(o=>[o.id,o]));
   const byIdB = B ? Object.fromEntries(B.map(o=>[o.id,o])) : null;
+
+  function drawPassLine(from, to){
+  ctx.save();
+  ctx.setLineDash([10,6]);
+  ctx.strokeStyle = '#38bdf8'; // cyan-ish dashed pass line
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.stroke();
+  ctx.restore();
+}
+
 
   for(const pid in acts){
     const act = acts[pid];
