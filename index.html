@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>High School Court — Screen Bubble</title>
 <style>
-  
   :root { --panel-bg:#111827; --panel-fg:#e5e7eb; --accent:#2563eb; --muted:#6b7280; --sel:#f59e0b; }
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,sans-serif;background:#0b0f17;color:var(--panel-fg)}
   .wrap{max-width:1100px;margin:20px auto;padding:12px;position:relative}
@@ -58,7 +57,7 @@
         <label>Frame (sec) <input id="dur" type="number" min="0.1" step="0.1" value="1.0" style="width:72px"/></label>
         <label><input id="onion" type="checkbox"/> Onion Skin</label>
         <label><input id="ease" type="checkbox" checked/> Ease</label>
-        <label><input id="flow" type="checkbox"/> Flow (no step stops)</label>
+        <label><input id="flow" type="checkbox" checked/> Flow (no step stops)</label>
         <div class="slider"><span style="font-size:12px;color:#9ca3af">Overlap</span> <input id="overlap" type="range" min="0" max="20" value="0"/> <span id="overlapVal" class="value">0%</span></div>
         <div class="dial" id="dialPlayback" title="Playback speed"></div>
         <div class="dial" id="dialStep" title="Step duration"></div>
