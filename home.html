@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hoops Playbook — Home</title>
+<style>
+  :root{ --bg:#0b0f17; --panel:#111827; --ink:#e5e7eb; --muted:#9ca3af; --line:#1f2937; --accent:#2563eb; --brand:#f59e0b; }
+  *{box-sizing:border-box} html,body{height:100%}
+  body{margin:0;background:radial-gradient(1200px 700px at 60% -10%, rgba(37,99,235,.18), transparent 60%), radial-gradient(1000px 500px at -10% 50%, rgba(245,158,11,.12), transparent 55%), var(--bg); color:var(--ink); font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Inter,sans-serif}
+  a{color:inherit;text-decoration:none}
+  .wrap{min-height:100%;display:grid;grid-template-rows:auto 1fr auto}
+  header{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,0))}
+  .logo{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:linear-gradient(145deg,#1b2233,#0b1220);border:1px solid #1f2a44}
+  .title{font-weight:700} .sub{color:var(--muted);font-size:12px}
+  .home{max-width:1100px;margin:0 auto;padding:24px}
+  .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
+  .card{grid-column:span 4;background:linear-gradient(180deg,#0f172a,#0b1220);border:1px solid #1f2937;border-radius:16px;padding:14px;box-shadow:0 6px 18px rgba(0,0,0,.25)}
+  .card.big{grid-column:span 12}
+  .card.half{grid-column:span 6}
+  .card .h{display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:8px}
+  .card p{color:#cbd5e1;margin:6px 0 0 0;font-size:13px}
+  .actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px}
+  .action-btn{display:flex;gap:10px;align-items:center;padding:12px;background:#101826;border:1px solid #263246;border-radius:12px;cursor:pointer}
+  .action-btn:hover{filter:brightness(1.05)} .action-btn svg{width:18px;height:18px}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;border:1px solid #263246;background:#101826;color:#cbd5e1;font-size:12px}
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+  footer{padding:14px 18px;border-top:1px solid var(--line);color:var(--muted)}
+  @media (max-width:980px){ .card{grid-column:span 6} .card.big{grid-column:span 12} }
+  @media (max-width:640px){ .card{grid-column:span 12} .actions{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="12" cy="12" r="9" fill="url(#g)"/>
+        <defs><radialGradient id="g" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(9 6) rotate(45) scale(14 12)"><stop stop-color="#FDBA74"/><stop offset="1" stop-color="#FB923C"/></radialGradient></defs>
+        <path d="M3 12h18M12 3c0 6 3 9 9 9M12 21c0-6-3-9-9-9"/>
+      </svg>
+    </div>
+    <div>
+      <div class="title">Hoops Playbook</div>
+      <div class="sub">Court animator and play library</div>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:10px;align-items:center">
+      <a href="splash.html?force=1" class="pill">View splash</a>
+      <span id="badgeSession" class="pill" hidden>Resume available</span>
+      <span id="badgeLib" class="pill" hidden>Saved plays: <b id="libCount">0</b></span>
+    </div>
+  </header>
+
+  <main>
+    <section class="home" id="home">
+      <div class="grid">
+        <div class="card big">
+          <div class="h">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            Quick actions
+          </div>
+          <div class="actions">
+            <a class="action-btn" href="#" data-go="new">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+              <div>
+                <div style="font-weight:700">New play session</div>
+                <div class="sub">Empty court, fresh track</div>
+              </div>
+            </a>
+            <a class="action-btn" href="#" data-go="resume" id="actResume" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5v14l11-7z"/></svg>
+              <div>
+                <div style="font-weight:700">Continue last session</div>
+                <div class="sub">Uses local autosave</div>
+              </div>
+            </a>
+            <label class="action-btn" style="cursor:pointer">
+              <input id="fileOpen" type="file" accept="application/json" hidden />
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+              <div>
+                <div style="font-weight:700">Open JSON</div>
+                <div class="sub">Load a saved track</div>
+              </div>
+            </label>
+            <a class="action-btn" href="#" data-go="library">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6 22a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8l6 6v11a2 2 0 0 1-2 2H6z"/></svg>
+              <div>
+                <div style="font-weight:700">Play library</div>
+                <div class="sub"><span id="homeLibCount">0</span> saved plays</div>
+              </div>
+            </a>
+          </div>
+          <div class="stats">
+            <span class="pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v4H3zM3 10h18v4H3zM3 17h18v4H3z"/></svg> Court 84×50 ft (NBA/NCAA toggles)</span>
+            <span class="pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> Capture steps</span>
+            <span class="pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5v14l11-7z"/></svg> Play, ease, flow</span>
+            <span class="pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 6l-4 10-4-4"/></svg> Pass paths & types</span>
+          </div>
+        </div>
+
+        <div class="card half">
+          <div class="h">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z"/></svg>
+            Tips
+          </div>
+          <p>Drag the ball with Shift to detach. No player overlap is enforced so cuts feel physical. Use random curves outward/inward for realistic routes.</p>
+        </div>
+
+        <div class="card half">
+          <div class="h">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+            Shortcuts
+          </div>
+          <p><span class="pill">C</span> capture • <span class="pill">Z</span> undo • <span class="pill">Space</span> play/pause • <span class="pill">←/→</span> prev/next • <span class="pill">1-4</span> actions</p>
+        </div>
+
+        <div class="card">
+          <div class="h">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20l9-5-9-5-9 5 9 5z"/><path d="M12 12l9-5-9-5-9 5 9 5z"/></svg>
+            Brand toolkit
+          </div>
+          <p>Export the splash art at any size for stores, launch screens, or docs.</p>
+          <div class="actions">
+            <button class="action-btn" id="btnPng1x">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+              <div><div style="font-weight:700">PNG 1600×1024</div><div class="sub">Lightweight</div></div>
+            </button>
+            <button class="action-btn" id="btnPng2x">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/></svg>
+              <div><div style="font-weight:700">PNG 3200×2048</div><div class="sub">Hi-res</div></div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>© <span id="yr"></span> Hoops Playbook. Local-only; nothing is uploaded.</footer>
+</div>
+
+<script>
+  // Point to your actual app:
+  const APP_URL = "index.html"; // e.g. "basketball_court_app (5).html"
+  const KEY_TRACK = 'court_track_actions_bubble';
+  const KEY_LIB = 'play_library_v1';
+
+  function hasSavedSession(){
+    try{
+      const raw = localStorage.getItem(KEY_TRACK);
+      if(!raw) return false;
+      const obj = JSON.parse(raw);
+      const arr = Array.isArray(obj) ? obj : obj.track;
+      return Array.isArray(arr) && arr.length > 1;
+    }catch(e){ return false; }
+  }
+  function libCount(){
+    try{ const lib = JSON.parse(localStorage.getItem(KEY_LIB)||'{}'); return Object.keys(lib).length; }
+    catch(e){ return 0; }
+  }
+
+  function nav(action, file){
+    const url = new URL(APP_URL, location.href);
+    url.searchParams.set('entry', action||'home');
+    if(file){ sessionStorage.setItem('pendingImportJSON', file); }
+    location.href = url.toString();
+  }
+
+  // Quick actions
+  document.querySelectorAll('[data-go]')?.forEach(el=>{
+    el.addEventListener('click', (e)=>{
+      e.preventDefault();
+      const act = el.getAttribute('data-go');
+      if(act === 'new') nav('new');
+      else if(act === 'resume') nav('resume');
+      else if(act === 'library') nav('library');
+    });
+  });
+
+  // File open
+  document.getElementById('fileOpen')?.addEventListener('change', (e)=>{
+    const f = e.target.files?.[0]; if(!f) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{ try{ sessionStorage.setItem('pendingImportJSON', reader.result); nav('import'); } catch(err){ alert('Could not read file: '+err.message); } };
+    reader.readAsText(f);
+  });
+
+  // UI badges + year
+  document.getElementById('yr').textContent = new Date().getFullYear();
+  const has = hasSavedSession();
+  if(has){ document.getElementById('badgeSession').hidden = false; document.getElementById('actResume').hidden = false; }
+  const n = libCount();
+  if(n>0){ document.getElementById('badgeLib').hidden = false; document.getElementById('libCount').textContent = n; document.getElementById('homeLibCount').textContent = n; }
+
+  // Brand toolkit export (reuses your splash SVG logic, but here we just draw a branded bg block)
+  function exportSplashPNG(width, height, name){
+    const w = width || 3200, h = height || 2048;
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createLinearGradient(0,0,w,h); grad.addColorStop(0,'#0e1524'); grad.addColorStop(1,'#0a0f1a'); ctx.fillStyle = grad; ctx.fillRect(0,0,w,h);
+    // Title
+    ctx.fillStyle = '#93c5fd'; ctx.font = Math.round(w*0.03)+'px system-ui,Segoe UI,Roboto';
+    ctx.textAlign = 'center'; ctx.fillText('HOOPS PLAYBOOK', w/2, Math.round(h*0.12));
+    // Simple court center circle ring
+    ctx.strokeStyle = '#1f64ff'; ctx.lineWidth = Math.max(4, w*0.002);
+    const r = Math.min(w,h)*0.12; ctx.beginPath(); ctx.arc(w/2, h/2, r, 0, Math.PI*2); ctx.stroke();
+    const a = document.createElement('a'); a.download = name || 'hoops_splash_'+w+'x'+h+'.png'; a.href = canvas.toDataURL('image/png'); a.click();
+  }
+  document.getElementById('btnPng1x')?.addEventListener('click', ()=> exportSplashPNG(1600,1024));
+  document.getElementById('btnPng2x')?.addEventListener('click', ()=> exportSplashPNG(3200,2048));
+</script>
+</body>
+</html>
