@@ -249,7 +249,7 @@ function drawCourt(){
   // rims
   const rimR = 1.5*ft; ctx.beginPath(); ctx.arc(OOB+HOOP_CTR, TOTAL_WID/2, rimR, 0, Math.PI*2); ctx.stroke(); ctx.beginPath(); ctx.arc(TOTAL_LEN-OOB-HOOP_CTR, TOTAL_WID/2, rimR, 0, Math.PI*2); ctx.stroke();
   // 3pt
-  const mode = modeSel.value||'NBA'; ctx.save(); ctx.strokeStyle = 'blue'; draw3ptHalf(OOB,mode); ctx.translate(TOTAL_LEN-OOB,0); ctx.scale(-1,1); draw3ptHalf(0,mode); ctx.restore();
+  const mode = modeSel.value||'NBA'; ctx.save(); ctx.strokeStyle = 'black'; draw3ptHalf(OOB,mode); ctx.translate(TOTAL_LEN-OOB,0); ctx.scale(-1,1); draw3ptHalf(0,mode); ctx.restore();
 }
 function draw3ptHalf(xOrigin, mode){
   const by = TOTAL_WID/2;
