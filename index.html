@@ -389,9 +389,9 @@ function hideMenu(){ if(menuEl){ menuEl.remove(); menuEl=null; menuTarget=null; 
 function showMenuFor(player, pageX, pageY){ hideMenu(); menuTarget=player; const div=document.createElement('div'); div.className='action-menu'; div.innerHTML=`<small>Action for #${player.label||'?'}:</small>
   <select id=\"actionPicker\">
     <option value=\"straight\" selected>Straight cut (→)</option>
-    <option value=\"random\">Random cut (↝)</option>
-    <option value=\"mimic\">Mimic drag (≋)</option>
-    <option value=\"screen\">Screen (⊣)</option>
+    <option value=\"random\">Off a Screen cut (↝)</option>
+    <option value=\"mimic\">Freeform (≋)</option>
+    <option value=\"screen\">Set a Screen (⊣)</option>
   </select>
   <label style=\"gap:4px;\"><small>Curve</small>
     <select id=\"curveDir\">
