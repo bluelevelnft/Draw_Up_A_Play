@@ -480,7 +480,10 @@ function syncSelUI(){ const id=state.selectedId; if(!id) return; if(overrideSel.
 (getBall() || {}).lastDetachedFromId = null;
 
 // ===== Timeline / Snapshots =====
-function deepFrame(){ return sprites.map(s=>({id:s.id,x:s.x,y:s.y,label:s.label,color:s.color,radius:s.radius,isBall:!!s.isBall,holderId:s.holderId||null,holdAngle:s.holdAngle||0})); }
+  function deepFrame() { return sprites.map(s => ({ id: s.id, x: s.x, y: s.y, label: s.label, color: s.color, radius: s.radius, isBall: !!s.isBall, holderId: s.holderId || null, holdAngle: s.holdAngle || 0 })); }
+// Capture the original spawn layout once (used for full reset)
+const START_FRAME = deepFrame();
+
 function applyFrame(frame){ const byId=Object.fromEntries(frame.map(o=>[o.id,o])); sprites.forEach((s,i)=>{ const m=byId[s.id] || frame[i]; if(m){ s.x=m.x; s.y=m.y; if(s.isBall){ s.holderId=m.holderId||null; s.holdAngle=m.holdAngle||0; } } }); }
 
 const btnCapture=document.getElementById('capture');
@@ -564,6 +567,50 @@ function gotoIndex(i){
 }
 function prevStep(){ if(state.track.length) gotoIndex(state.index - 1); }
 function nextStep(){ if(state.track.length) gotoIndex(state.index + 1); }
+function fullReset(){
+  // stop any playback
+  state.isPlaying = false;
+  state.passPlan = null;
+  btnPause.disabled = true;
+  btnPlay.disabled = false;
+
+  // wipe timeline + per-step/per-player data
+  state.track = [];
+  state.index = 0;
+  state.segmentActions = {};
+  state.movement.overrides = {};
+  state.startMarker = null;
+  state.lastClickedStep = 0;
+  state._lastEnterAt = 0;
+  state.selectedId = null;
+
+  // kill any inline action menu if present
+  try { hideMenu && hideMenu(); } catch(_) {}
+
+  // reset UI bits that depend on selection
+  if (overrideSel){ overrideSel.checked = false; }
+  if (pathModeSel){ pathModeSel.disabled = true; }
+  if (curvSel){ curvSel.disabled = true; curvSel.value = (state.movement.globalCurv ?? 0.8); curvSelVal.textContent = (+curvSel.value).toFixed(2); }
+
+  // clear the uploaded file (so the app "forgets" it)
+  if (inpLoad) { inpLoad.value = ''; }
+
+  // nuke any saved plays in localStorage (covering older keys too)
+  ['court_track_actions_bubble','court_track_actions_collide','court_track_actions','court_track_stable']
+    .forEach(k => { try { localStorage.removeItem(k); } catch(_) {} });
+
+  // apply the original spawn layout back onto sprites
+  if (Array.isArray(START_FRAME)) {
+    applyFrame(START_FRAME);
+  }
+
+  updateTimelineUI();
+  drawEverything();
+  setStatus('Reset: track cleared, players restored to start, uploads cleared.');
+}
+
+// Wire up the button
+btnClear.onclick = fullReset;
 
 function makePassPlan(A, B){
   const bi = A.findIndex(o => o.isBall);
@@ -935,7 +982,7 @@ function restore(){ try{ const raw=localStorage.getItem('court_track_actions_bub
 
 btnSave.onclick=()=>{ const data=JSON.stringify({ meta:{version:9, created:new Date().toISOString()}, track:state.track, movement:state.movement, segmentActions:state.segmentActions }, null, 2); const blob=new Blob([data],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='play_track.json'; a.click(); URL.revokeObjectURL(url); setStatus('Track saved as JSON'); };
 inpLoad.onchange=e=>{ const file=e.target.files[0]; if(!file) return; const reader=new FileReader(); reader.onload=()=>{ try{ const obj=JSON.parse(reader.result); const arr=Array.isArray(obj)?obj:obj.track; if(!Array.isArray(arr) || !arr.length) throw new Error('Invalid track'); state.track=arr; state.index=Math.min(1, state.track.length-1); applyFrame(state.track[state.index].frame); updateTimelineUI(); if(obj.movement) state.movement=obj.movement; if(obj.segmentActions) state.segmentActions=obj.segmentActions; drawEverything(); persist(); setStatus('Track loaded'); }catch(err){ setStatus('Load failed: '+err.message); } }; reader.readAsText(file); };
-btnClear.onclick=()=>{ state.track=[]; state.index=0; state.segmentActions={}; persist(); updateTimelineUI(); setStatus('Cleared track'); };
+//btnClear.onclick=()=>{ state.track=[]; state.index=0; state.segmentActions={}; persist(); updateTimelineUI(); setStatus('Cleared track'); };
 btnPng.onclick=()=>{ const a=document.createElement('a'); a.download='frame.png'; a.href=canvas.toDataURL('image/png'); a.click(); };
 
 // ===== Named Library (localStorage) =====
