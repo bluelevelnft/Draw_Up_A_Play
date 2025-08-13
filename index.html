@@ -287,13 +287,17 @@ function draw3ptHalf(xOrigin, mode){
   ctx.lineTo(xOrigin, yBot);
   ctx.stroke();
 }
+// ===== forcing the UI to show 1 instead of 0 for step counting
+// Human-friendly step numbers for UI (1-based), while keeping storage 0-based
+function humanStep(i){ return i + 1; }           // 0 -> 1, 1 -> 2, ...
+function clampIdx(i){ return Math.max(0, Math.min(i, state.track.length-1)); }
 
 // ===== Sprites =====
 let AUTO_ID = 1;
 class Sprite{ constructor(x,y,label,color,{isBall=false}={}){ this.id=AUTO_ID++; this.x=x; this.y=y; this.label=label||''; this.color=color||'#ff6347'; this.radius=15; this.isBall=isBall; this.holderId=null; this.holdAngle=0; }
   draw({ghost=false}={}){ ctx.beginPath(); ctx.arc(this.x,this.y,this.radius,0,Math.PI*2); ctx.fillStyle=this.color; if(ghost) ctx.globalAlpha=.35; ctx.fill(); ctx.globalAlpha=1; ctx.strokeStyle=this.isBall&&this.holderId?'#1f2937':'#000'; ctx.lineWidth=this.isBall&&this.holderId?3:1; ctx.stroke(); ctx.lineWidth=1; if(this.label){ ctx.fillStyle='#fff'; ctx.font='14px system-ui, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(this.label,this.x,this.y);} }
 }
-const sprites=[ new Sprite(100,100,'1','#ff6347'), new Sprite(150,100,'2','#ff6347'), new Sprite(200,100,'3','#ff6347'), new Sprite(250,100,'4','#ff6347'), new Sprite(300,100,'5','#ff6347'), new Sprite(OOB/2,150,'x1','#1e90ff'), new Sprite(OOB/2,200,'x2','#1e90ff'), new Sprite(OOB/2,250,'x3','#1e90ff'), new Sprite(OOB/2,300,'x4','#1e90ff'), new Sprite(OOB/2,350,'x5','#1e90ff'), new Sprite(TOTAL_LEN/2, TOTAL_WID/2, '', '#ffa500', {isBall:true}) ];
+const sprites=[ new Sprite(100,100,'1','#ff6347'), new Sprite(150,100,'2','#ff6347'), new Sprite(200,100,'3','#ff6347'), new Sprite(250,100,'4','#ff6347'), new Sprite(300,100,'5','#ff6347'), new Sprite(OOB/2,150,'1','#1e90ff'), new Sprite(OOB/2,200,'2','#1e90ff'), new Sprite(OOB/2,250,'3','#1e90ff'), new Sprite(OOB/2,300,'4','#1e90ff'), new Sprite(OOB/2,350,'5','#1e90ff'), new Sprite(TOTAL_LEN/2, TOTAL_WID/2, '', '#ffa500', {isBall:true}) ];
 function getBall(){ return sprites.find(s=>s.isBall); }
 function players(){ return sprites.filter(s=>!s.isBall); }
 function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
@@ -389,9 +393,9 @@ function hideMenu(){ if(menuEl){ menuEl.remove(); menuEl=null; menuTarget=null; 
 function showMenuFor(player, pageX, pageY){ hideMenu(); menuTarget=player; const div=document.createElement('div'); div.className='action-menu'; div.innerHTML=`<small>Action for #${player.label||'?'}:</small>
   <select id=\"actionPicker\">
     <option value=\"straight\" selected>Straight cut (→)</option>
-    <option value=\"random\">Off a Screen cut (↝)</option>
-    <option value=\"mimic\">Freeform (≋)</option>
-    <option value=\"screen\">Set a Screen (⊣)</option>
+    <option value=\"random\">Random cut (↝)</option>
+    <option value=\"mimic\">Mimic drag (≋)</option>
+    <option value=\"screen\">Screen (⊣)</option>
   </select>
   <label style=\"gap:4px;\"><small>Curve</small>
     <select id=\"curveDir\">
@@ -543,23 +547,35 @@ function captureStep(){
   state.index = state.track.length - 1;
   persist();
   updateTimelineUI();
-  setStatus(`Captured step ${state.index}`);
+  setStatus(`Captured step ${humanStep(state.index)}`);
+
 }
 
 
 function undoStep(){ if(state.track.length>0){ state.track.pop(); state.index=Math.max(0, state.track.length-1); if(state.track[state.index]) applyFrame(state.track[state.index].frame); persist(); updateTimelineUI(); setStatus('Undid last step'); drawEverything(); } }
-function gotoIndex(i){ if(!state.track.length) return; state.index=Math.max(0, Math.min(i, state.track.length-1)); applyFrame(state.track[state.index].frame); updateTimelineUI(); setStatus(`Jumped to step ${state.index}`); drawEverything(); }
-function prevStep(){ if(state.track.length) gotoIndex(state.index-1); }
-function nextStep(){ if(state.track.length) gotoIndex(state.index+1); }
+// function gotoIndex(i){ if(!state.track.length) return; state.index=Math.max(0, Math.min(i, state.track.length-1)); applyFrame(state.track[state.index].frame); updateTimelineUI(); setStatus(`Jumped to step ${state.index}`); drawEverything(); }
+function gotoIndex(i){
+  if(!state.track.length) return;
+  state.index = clampIdx(i);
+  applyFrame(state.track[state.index].frame);
+  updateTimelineUI();
+  setStatus(`Jumped to step ${humanStep(state.index)}`);
+  drawEverything();
+}
+function prevStep(){ if(state.track.length) gotoIndex(state.index - 1); }
+function nextStep(){ if(state.track.length) gotoIndex(state.index + 1); }
 
 function makePassPlan(A,B){ const bi=A.findIndex(o=>o.isBall); if(bi<0) return null; const aBall=A[bi], bBall=B[bi]||aBall; const isPass=(aBall.holderId!=null && bBall.holderId!=null && aBall.holderId!==bBall.holderId); if(!isPass) return null; const holderA=A.find(o=>o.id===aBall.holderId); const holderBStart=A.find(o=>o.id===bBall.holderId); const holderBEnd=B.find(o=>o.id===bBall.holderId); if(!holderA||!holderBEnd) return null; const ballR=aBall.radius||15; const pseudo={radius:ballR}; const start=perimeterPos(holderA, aBall.holdAngle, pseudo); const end=perimeterPos(holderBEnd, bBall.holdAngle, pseudo); const receiverMoving=holderBStart && (Math.hypot(holderBEnd.x-holderBStart.x, holderBEnd.y-holderBStart.y)>0.1); const speed=getBallSpeed(); const type=getPassType(); const delay=receiverMoving?Math.max(0,1-1/speed):0; const bounce=lerpPt(start,end,0.6); return {active:true,type,start,end,bounce,speed,delay,progress:0,catchId:bBall.holderId,catchAngle:bBall.holdAngle}; }
 
 // ===== Play: start at CURRENT step, stop at end (no loop) + screen bubble =====
 const SCREEN_BUBBLE_SEC = 0.4; // show bubble before screen action
 function play(){
-  if (state.track.length < 2) { setStatus('Need at least 2 steps to play'); return; }
-  // Start from whatever step is currently selected in the timeline
-  if (state.index >= state.track.length - 1) { setStatus(`Step ${state.index} has no next step to play`); return; }
+  if (state.track.length < 2) {
+    setStatus('Need at least 2 steps to play'); return;
+  }
+  if (state.index >= state.track.length - 1) {
+    setStatus(`Step ${humanStep(state.index)} has no next step to play`); return;
+  }
   state.index = Math.max(0, state.index);
   state.isPlaying = true; state.passPlan=null; btnPlay.disabled = true; btnPause.disabled = false;
   function setupSegment(){
@@ -587,51 +603,51 @@ function play(){
     const baseT = useEase ? easeInOutCubic(tRaw) : tRaw;
     const A = state.fromFrame, B = state.toFrame;
     // --- PREVIEW PHASE: show arrows & (if any) pass line before movement starts
-if (state.previewUntil && now < state.previewUntil) {
-  // lock positions to the start frame (A)
-  applyFrame(A);
-  // draw court + previews + (possible) pass line + sprites
-  drawCourt();
-  // reuse your existing preview overlay (if you added it earlier)
-  if (typeof previewActionsForStep === 'function') {
-    previewActionsForStep(state.index);
+  if (state.previewUntil && now < state.previewUntil) {
+    // lock positions to the start frame (A)
+    applyFrame(A);
+    // draw court + previews + (possible) pass line + sprites
+    drawCourt();
+    // reuse your existing preview overlay (if you added it earlier)
+    if (typeof previewActionsForStep === 'function') {
+      previewActionsForStep(state.index);
+    }
+    if (state.passPlan && state.passPlan.active) {
+      drawPassLine(state.passPlan.start, state.passPlan.end);
+    }
+    drawSprites();
+    requestAnimationFrame(loop);
+    return; // don't advance movement yet
   }
-  if (state.passPlan && state.passPlan.active) {
-    drawPassLine(state.passPlan.start, state.passPlan.end);
+  // first tick after preview: reset playStart so duration timing excludes preview
+  if (state.previewUntil) {
+    state.playStart = performance.now();
+    state.previewUntil = 0;
   }
-  drawSprites();
-  requestAnimationFrame(loop);
-  return; // don't advance movement yet
-}
-// first tick after preview: reset playStart so duration timing excludes preview
-if (state.previewUntil) {
-  state.playStart = performance.now();
-  state.previewUntil = 0;
-}
 
-    const idxPrev = Math.max(0, state.index-1); const idxNext2 = Math.min(state.track.length-1, state.index+2);
-    const F0 = state.track[idxPrev]?.frame || A; const F3 = state.track[idxNext2]?.frame || B;
+      const idxPrev = Math.max(0, state.index-1); const idxNext2 = Math.min(state.track.length-1, state.index+2);
+      const F0 = state.track[idxPrev]?.frame || A; const F3 = state.track[idxNext2]?.frame || B;
 
-    // Compute and assign player positions (no slowdowns)
-players().forEach((s)=>{
-  const i = sprites.indexOf(s); const a=A[i]; const b=B[i]||a;
-  const iPrev = Math.max(0, state.index-1); const iNext2 = Math.min(state.track.length-1, state.index+2);
-  const p0=state.track[iPrev]?.frame?.[i]||a, p1=a, p2=b, p3=state.track[iNext2]?.frame?.[i]||b;
-  let tLocalRaw = tRaw; const act = getSegmentAction(state.index, s.id);
-  if (act && act.type==='screen'){ const frac=Math.min(1, SCREEN_BUBBLE_SEC/dur); tLocalRaw = Math.max(0, (tRaw - frac)/(1 - frac)); }
-  const tLocal = chkEase.checked ? easeInOutCubic(tLocalRaw) : tLocalRaw;
-  let pos;
-  if (act){
-    if (act.type==='straight' || act.type==='screen') pos = { x: a.x + (b.x-a.x)*tLocal, y: a.y + (b.y-a.y)*tLocal };
-    else if (act.type==='random' && act.data?.bez){ const {c1,c2}=act.data.bez; pos = bezierEval({x:a.x,y:a.y}, c1,c2, {x:b.x,y:b.y}, tLocal); }
-    else if (act.type==='mimic' && act.data?.points?.length>1){ const drift=Math.hypot(a.x-act.data.from.x,a.y-act.data.from.y)+Math.hypot(b.x-act.data.to.x,b.y-act.data.to.y); pos = (drift<12)? samplePolyline(act.data.points,tLocal) : {x:a.x+(b.x-a.x)*tLocal, y:a.y+(b.y-a.y)*tLocal}; }
-    else pos = { x: a.x + (b.x-a.x)*tLocal, y: a.y + (b.y-a.y)*tLocal };
-  } else {
-    const mode=getPathModeFor(s.id); const curv=getCurvFor(s.id);
-    if (mode==='smooth' && curv>0){ const {c1,c2}=catmullToBezier(p0,p1,p2,p3,curv); pos = bezierEval({x:p1.x,y:p1.y}, c1,c2, {x:p2.x,y:p2.y}, tLocal); }
-    else pos = { x: a.x + (b.x-a.x)*tLocal, y: a.y + (b.y-a.y)*tLocal };
-  }
-  s.x = pos.x; s.y = pos.y;
+      // Compute and assign player positions (no slowdowns)
+  players().forEach((s)=>{
+    const i = sprites.indexOf(s); const a=A[i]; const b=B[i]||a;
+    const iPrev = Math.max(0, state.index-1); const iNext2 = Math.min(state.track.length-1, state.index+2);
+    const p0=state.track[iPrev]?.frame?.[i]||a, p1=a, p2=b, p3=state.track[iNext2]?.frame?.[i]||b;
+    let tLocalRaw = tRaw; const act = getSegmentAction(state.index, s.id);
+    if (act && act.type==='screen'){ const frac=Math.min(1, SCREEN_BUBBLE_SEC/dur); tLocalRaw = Math.max(0, (tRaw - frac)/(1 - frac)); }
+    const tLocal = chkEase.checked ? easeInOutCubic(tLocalRaw) : tLocalRaw;
+    let pos;
+    if (act){
+      if (act.type==='straight' || act.type==='screen') pos = { x: a.x + (b.x-a.x)*tLocal, y: a.y + (b.y-a.y)*tLocal };
+      else if (act.type==='random' && act.data?.bez){ const {c1,c2}=act.data.bez; pos = bezierEval({x:a.x,y:a.y}, c1,c2, {x:b.x,y:b.y}, tLocal); }
+      else if (act.type==='mimic' && act.data?.points?.length>1){ const drift=Math.hypot(a.x-act.data.from.x,a.y-act.data.from.y)+Math.hypot(b.x-act.data.to.x,b.y-act.data.to.y); pos = (drift<12)? samplePolyline(act.data.points,tLocal) : {x:a.x+(b.x-a.x)*tLocal, y:a.y+(b.y-a.y)*tLocal}; }
+      else pos = { x: a.x + (b.x-a.x)*tLocal, y: a.y + (b.y-a.y)*tLocal };
+    } else {
+      const mode=getPathModeFor(s.id); const curv=getCurvFor(s.id);
+      if (mode==='smooth' && curv>0){ const {c1,c2}=catmullToBezier(p0,p1,p2,p3,curv); pos = bezierEval({x:p1.x,y:p1.y}, c1,c2, {x:p2.x,y:p2.y}, tLocal); }
+      else pos = { x: a.x + (b.x-a.x)*tLocal, y: a.y + (b.y-a.y)*tLocal };
+    }
+    s.x = pos.x; s.y = pos.y;
 });
 
 enforceAllPlayerConstraints(3);
@@ -726,33 +742,39 @@ function previewActionsForStep(stepIdx){
     }
     requestAnimationFrame(loop);
   }
-  requestAnimationFrame(loop); setStatus(`Playing from Step ${state.index}`);
-}
+  requestAnimationFrame(loop); setStatus(`Playing from Step ${humanStep(state.index)}`);
+  }
 
 function pause(){ state.isPlaying=false; btnPlay.disabled=false; btnPause.disabled=true; setStatus('Paused'); }
 function resetToZero(){ if (state.track.length){ state.index=1; applyFrame(state.track[1]?.frame || state.track[0].frame); updateTimelineUI(); drawEverything(); setStatus('Reset to step 1'); } }
 
 function updateTimelineUI(){
-  elTimeline.innerHTML='';
-  state.track.forEach((_,i)=>{
-    const chip=document.createElement('div');
-    chip.className='chip'+(i===state.index?' active':'')+(state.startMarker===i?' marker':'');
-    chip.textContent=i; chip.title=`Step ${i}`;
-    chip.onclick=(ev)=>{
-      state.lastClickedStep = i;
-      if(ev && ev.shiftKey){
-        state.startMarker = i;
-        setStatus(`Start marker set: Step ${i}`);
+  elTimeline.innerHTML = '';
+  state.track.forEach((_, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'chip'
+      + (i === state.index ? ' active' : '')
+      + (state.startMarker === i ? ' marker' : '');
+    chip.textContent = humanStep(i);          // 1-based label
+    chip.title = `Step ${humanStep(i)}`;
+    chip.dataset.idx = String(i);             // keep 0-based for logic
+    chip.onclick = (ev) => {
+      const idx = parseInt(chip.dataset.idx, 10) || 0;
+      state.lastClickedStep = idx;
+      if (ev && ev.shiftKey){
+        state.startMarker = idx;
+        setStatus(`Start marker set: Step ${humanStep(idx)}`);
         updateTimelineUI();
-      } else {
-        if(!state.isPlaying) gotoIndex(i);
+      } else if (!state.isPlaying){
+        gotoIndex(idx);
       }
     };
     elTimeline.appendChild(chip);
   });
-  btnUndo.disabled=state.track.length===0;
-  btnPrev.disabled = btnNext.disabled = state.track.length===0;
+  btnUndo.disabled = state.track.length === 0;
+  btnPrev.disabled = btnNext.disabled = state.track.length === 0;
 }
+
 
 function drawEverything(){
   drawCourt();
@@ -1000,54 +1022,86 @@ window.addEventListener('keydown', function(e){
 
 // ===== Keyboard =====
 
+// ===== Keyboard =====
 window.addEventListener('keydown', (e)=>{
-  const tag=(e.target&&e.target.tagName)||''; if(tag==='INPUT'||tag==='SELECT') return;
-  if(e.code==='KeyC'){ captureStep(); }
-  else if(e.code==='KeyZ'){ undoStep(); }
-  else if(e.code==='Space'){ e.preventDefault(); state.isPlaying?pause():play(); }
-  else if(e.code==='ArrowLeft'){ prevStep(); }
-  else if(e.code==='ArrowRight'){ nextStep(); }
-  else if(e.code==='Enter'){
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'SELECT') return;
+
+  if (e.code === 'KeyC'){ captureStep(); }
+  else if (e.code === 'KeyZ'){ undoStep(); }
+  else if (e.code === 'Space'){ e.preventDefault(); state.isPlaying ? pause() : play(); }
+  else if (e.code === 'ArrowLeft'){ prevStep(); }
+  else if (e.code === 'ArrowRight'){ nextStep(); }
+  else if (e.code === 'Enter'){
     e.preventDefault();
     const now = performance.now();
-    const dbl = (now - state._lastEnterAt) < 400; // 400ms window for double-press
+    const dbl = (now - (state._lastEnterAt || 0)) < 400; // 400ms double-press window
     state._lastEnterAt = now;
+
     let startIdx;
-    if (dbl){ startIdx = 1; setStatus('Enter×2 → starting from Step 1'); }
-    else if (state.startMarker != null){ startIdx = state.startMarker; setStatus(`Enter → starting from marker Step ${startIdx}`); }
-    else if (Number.isInteger(state.lastClickedStep)) { startIdx = state.lastClickedStep; setStatus(`Enter → starting from Step ${startIdx}`); }
-    else { startIdx = state.index; setStatus(`Enter → starting from Step ${startIdx}`); }
-    // guard and play
-    if (state.track.length < 2 || startIdx >= state.track.length-1){ setStatus(`Step ${startIdx} has no next step to play`); return; }
+    if (dbl){
+      // Double-Enter: start from index 1 (human Step 2). Change to 0 if you want Step 1.
+      startIdx = 0;
+      setStatus('Enter×2 → starting from Step 1');
+    } else if (state.startMarker != null){
+      startIdx = state.startMarker;
+      setStatus(`Enter → starting from marker Step ${startIdx + 1}`);
+    } else if (Number.isInteger(state.lastClickedStep)) {
+      startIdx = state.lastClickedStep;
+      setStatus(`Enter → starting from Step ${startIdx + 1}`);
+    } else {
+      startIdx = state.index;
+      setStatus(`Enter → starting from Step ${startIdx + 1}`);
+    }
+
+    // Guard: must have a next step to play from
+    if (state.track.length < 2 || startIdx >= state.track.length - 1){
+      setStatus(`Step ${startIdx + 1} has no next step to play`);
+      return;
+    }
+
     state.index = Math.max(0, startIdx);
     play();
-    return;
   }
-  // hotkeys for selected player's action
-  if(!state.isPlaying && state.selectedId){
-    const s = sprites.find(p=>p.id===state.selectedId && !p.isBall); if(!s) return;
-    const stepIdx=state.index; const A = state.track[stepIdx]?.frame || deepFrame();
-    const B = state.track[Math.min(stepIdx+1, state.track.length-1)]?.frame || deepFrame();
-    const findById=(fr,id)=>fr.find(o=>o.id===id) || {x:s.x,y:s.y}; const a=findById(A,s.id); const b=findById(B,s.id);
-    if(e.code==='Digit1'){
+
+  // ---- Hotkeys for selected player's action (unchanged) ----
+  if (!state.isPlaying && state.selectedId){
+    const s = sprites.find(p => p.id === state.selectedId && !p.isBall);
+    if (!s) return;
+
+    const stepIdx = state.index;
+    const A = state.track[stepIdx]?.frame || deepFrame();
+    const B = state.track[Math.min(stepIdx + 1, state.track.length - 1)]?.frame || deepFrame();
+    const findById = (fr,id)=> fr.find(o=>o.id===id) || {x:s.x, y:s.y};
+    const a = findById(A, s.id);
+    const b = findById(B, s.id);
+
+    if (e.code === 'Digit1'){
       setSegmentAction(stepIdx, s.id, {type:'straight', data:{from:{x:a.x,y:a.y}, to:{x:b.x,y:b.y}}});
+      drawEverything();
     }
-    else if(e.code==='Digit2'){
+    else if (e.code === 'Digit2'){
       const curveDir = e.shiftKey ? 'inward' : 'outward';
-      const bez = computeRandomBezier({x:a.x,y:a.y},{x:b.x,y:b.y},curveDir);
+      const bez = computeRandomBezier({x:a.x,y:a.y}, {x:b.x,y:b.y}, curveDir);
       setSegmentAction(stepIdx, s.id, {type:'random', data:{bez, from:{x:a.x,y:a.y}, to:{x:b.x,y:b.y}, curveDir}});
+      drawEverything();
     }
-    else if(e.code==='Digit3'){
-      const drag=state.lastDrag[s.id];
-      if(drag){ setSegmentAction(stepIdx, s.id, {type:'mimic', data:drag}); }
-      else { setSegmentAction(stepIdx, s.id, {type:'mimic', data:{points:[{x:a.x,y:a.y},{x:b.x,y:b.y}], from:{x:a.x,y:a.y}, to:{x:b.x,y:b.y}}}); }
+    else if (e.code === 'Digit3'){
+      const drag = state.lastDrag[s.id];
+      if (drag){
+        setSegmentAction(stepIdx, s.id, {type:'mimic', data:drag});
+      } else {
+        setSegmentAction(stepIdx, s.id, {type:'mimic', data:{points:[{x:a.x,y:a.y},{x:b.x,y:b.y}], from:{x:a.x,y:a.y}, to:{x:b.x,y:b.y}}});
+      }
+      drawEverything();
     }
-    else if(e.code==='Digit4'){
+    else if (e.code === 'Digit4'){
       setSegmentAction(stepIdx, s.id, {type:'screen', data:{from:{x:a.x,y:a.y}, to:{x:b.x,y:b.y}}});
+      drawEverything();
     }
-    drawEverything();
   }
 });
+
 
 // ===== Guides & previews =====
 function drawSprites(){
