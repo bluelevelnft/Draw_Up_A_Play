@@ -565,10 +565,77 @@ function gotoIndex(i){
 function prevStep(){ if(state.track.length) gotoIndex(state.index - 1); }
 function nextStep(){ if(state.track.length) gotoIndex(state.index + 1); }
 
-function makePassPlan(A,B){ const bi=A.findIndex(o=>o.isBall); if(bi<0) return null; const aBall=A[bi], bBall=B[bi]||aBall; const isPass=(aBall.holderId!=null && bBall.holderId!=null && aBall.holderId!==bBall.holderId); if(!isPass) return null; const holderA=A.find(o=>o.id===aBall.holderId); const holderBStart=A.find(o=>o.id===bBall.holderId); const holderBEnd=B.find(o=>o.id===bBall.holderId); if(!holderA||!holderBEnd) return null; const ballR=aBall.radius||15; const pseudo={radius:ballR}; const start=perimeterPos(holderA, aBall.holdAngle, pseudo); const end=perimeterPos(holderBEnd, bBall.holdAngle, pseudo); const receiverMoving=holderBStart && (Math.hypot(holderBEnd.x-holderBStart.x, holderBEnd.y-holderBStart.y)>0.1); const speed=getBallSpeed(); const type=getPassType(); const delay=receiverMoving?Math.max(0,1-1/speed):0; const bounce=lerpPt(start,end,0.6); return {active:true,type,start,end,bounce,speed,delay,progress:0,catchId:bBall.holderId,catchAngle:bBall.holdAngle}; }
+function makePassPlan(A, B){
+  const bi = A.findIndex(o => o.isBall);
+  if (bi < 0) return null;
+
+  const aBall = A[bi];
+  const bBall = B[bi] || aBall;
+
+  const ballR = aBall.radius || 15;
+
+  // Helper to validate points
+  const ok = (p) => p && Number.isFinite(p.x) && Number.isFinite(p.y);
+
+  // --- CASE 1: Player → Player (holder changes)
+  if (aBall.holderId != null && bBall.holderId != null && aBall.holderId !== bBall.holderId) {
+    const passerA      = A.find(o => o.id === aBall.holderId);
+    const receiverA    = A.find(o => o.id === bBall.holderId); // start-frame receiver (optional)
+    const receiverB    = B.find(o => o.id === bBall.holderId);
+    if (!passerA || !receiverB) return null;
+
+    const start = perimeterPos(passerA,   aBall.holdAngle ?? 0, {radius:ballR});
+    const end   = perimeterPos(receiverB, bBall.holdAngle ?? 0, {radius:ballR});
+    if (!ok(start) || !ok(end)) return null;
+
+    const receiverMoving = !!(receiverA && (Math.hypot((receiverB.x - receiverA.x)||0, (receiverB.y - receiverA.y)||0) > 0.1));
+    const speed = Math.max(0.1, getBallSpeed() || 1);
+    const delay = receiverMoving ? Math.max(0, 1 - 1/speed) : 0;
+
+    return {
+      active:true,
+      type:getPassType(),
+      start, end,
+      bounce: lerpPt(start, end, 0.6),
+      speed, delay,
+      progress:0,
+      catchId:bBall.holderId,
+      catchAngle:bBall.holdAngle ?? 0
+    };
+  }
+
+  // --- CASE 2: Player → Space (next step has NO holderId)
+  if (aBall.holderId != null && bBall.holderId == null) {
+    const passerA = A.find(o => o.id === aBall.holderId);
+    if (!passerA) return null;
+
+    const start = perimeterPos(passerA, aBall.holdAngle ?? 0, {radius:ballR});
+    const end   = { x: bBall.x, y: bBall.y }; // fly to where the ball is in B
+    if (!ok(start) || !ok(end)) return null;
+
+    const speed = Math.max(0.1, getBallSpeed() || 1);
+
+    return {
+      active:true,
+      type:getPassType(),
+      start, end,
+      bounce: lerpPt(start, end, 0.6),
+      speed, delay:0,
+      progress:0,
+      catchId:null,
+      catchAngle:0
+    };
+  }
+
+  // Otherwise: not a pass
+  return null;
+}
+
 
 // ===== Play: start at CURRENT step, stop at end (no loop) + screen bubble =====
 const SCREEN_BUBBLE_SEC = 0.4; // show bubble before screen action
+// Put this near other small helpers (above the loop is fine)
+const _ptOk = (p)=> p && Number.isFinite(p.x) && Number.isFinite(p.y);
 function play(){
   if (state.track.length < 2) {
     setStatus('Need at least 2 steps to play'); return;
@@ -603,6 +670,7 @@ function play(){
   }
   setupSegment();
   function easeInOutCubic(x){ return x<0.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2; }
+
   function loop(now){
     if (!state.isPlaying) return;
     const durBase = Math.max(0.05, state.track[state.index].duration);
@@ -617,6 +685,16 @@ function play(){
     applyFrame(A);
     // draw court + previews + (possible) pass line + sprites
     drawCourt();
+      try {
+        drawTrailsDuringMovement(state.index, A, B, tRaw);
+        if (state.passPlan && state.passPlan.active) {
+          drawRemainingPass(state.passPlan);
+        }
+      } catch (err) {
+        console.warn('Trail draw skipped:', err);
+      }
+      drawSprites();
+
     // reuse your existing preview overlay (if you added it earlier)
     if (typeof previewActionsForStep === 'function') {
       previewActionsForStep(state.index);
@@ -663,16 +741,56 @@ enforceAllPlayerConstraints(3);
 
     // Ball
     const ball = getBall();
-    if (state.passPlan && state.passPlan.active){
-      const p = state.passPlan; const n = Math.max(0, Math.min(1, (tRaw - p.delay) * p.speed)); p.progress = n;
-      if (p.type === 'bounce'){
-        const frac = 0.6; if (n < frac){ const k = n/frac; const pos = lerpPt(p.start, p.bounce, k); ball.x = pos.x; ball.y = pos.y; }
-        else { const k = (n-frac)/(1-frac); const pos = lerpPt(p.bounce, p.end, k); ball.x = pos.x; ball.y = pos.y; }
-      } else { const pos = lerpPt(p.start, p.end, n); ball.x = pos.x; ball.y = pos.y; }
-      ball.holderId = null; if (n >= 1){ ball.holderId = p.catchId; ball.holdAngle = p.catchAngle; updateBallFollow(); state.passPlan=null; }
+    if (state.passPlan && state.passPlan.active){if (state.passPlan && state.passPlan.active){
+  const p = state.passPlan;
+  const n = Math.max(0, Math.min(1, (tRaw - (p.delay||0)) * (p.speed||1)));
+  p.progress = n;
+
+  if (_ptOk(p.start) && _ptOk(p.end)) {
+    if (p.type === 'bounce' && _ptOk(p.bounce)) {
+      const frac = 0.6;
+      const segA = Math.min(n/frac, 1);
+      const segB = Math.max((n-frac)/(1-frac), 0);
+      const pos = (n < frac) ? lerpPt(p.start, p.bounce, segA) : lerpPt(p.bounce, p.end, segB);
+      ball.x = pos.x; ball.y = pos.y;
     } else {
-      const bi = A.findIndex(o=>o.isBall); if (bi >= 0){ const aBall = A[bi], bBall = B[bi] || aBall; if (bBall.holderId!=null){ ball.holderId = bBall.holderId; ball.holdAngle = (bBall.holdAngle!=null?bBall.holdAngle:ball.holdAngle); updateBallFollow(); } else if (aBall.holderId!=null){ ball.holderId = aBall.holderId; ball.holdAngle = (aBall.holdAngle!=null?aBall.holdAngle:ball.holdAngle); updateBallFollow(); } else { ball.x = aBall.x + (bBall.x - aBall.x)*baseT; ball.y = aBall.y + (bBall.y - aBall.y)*baseT; } }
+      const pos = lerpPt(p.start, p.end, n);
+      ball.x = pos.x; ball.y = pos.y;
     }
+  }
+
+  // mid-flight: ball has no holder
+  ball.holderId = null;
+
+  // catch -> hand ownership to receiver & clear plan
+  if (n >= 1){
+    ball.holderId = p.catchId;
+    ball.holdAngle = p.catchAngle || 0;
+    updateBallFollow();
+    state.passPlan = null;
+  }
+}
+
+
+      } else {
+      const bi = A.findIndex(o => o.isBall);
+      if (bi >= 0) {
+        const aBall = A[bi], bBall = B[bi] || aBall;
+
+        if (bBall.holderId != null) {
+          // Attach to the NEXT holder immediately (catch during this segment)
+          ball.holderId = bBall.holderId;
+          ball.holdAngle = (bBall.holdAngle != null ? bBall.holdAngle : ball.holdAngle);
+          updateBallFollow();
+        } else {
+          // No holder in the next frame → keep the ball FREE (do NOT reattach to passer)
+          ball.holderId = null;
+          ball.x = aBall.x + (bBall.x - aBall.x) * baseT;
+          ball.y = aBall.y + (bBall.y - aBall.y) * baseT;
+        }
+      }
+    }
+
     function drawArrow(from, to, style='solid'){
   ctx.save();
   if(style==='dashed'){ ctx.setLineDash([8,6]); }
@@ -694,6 +812,19 @@ function drawScreenCap(point, normalAngle){
   ctx.moveTo(point.x - len*Math.cos(a), point.y - len*Math.sin(a));
   ctx.lineTo(point.x + len*Math.cos(a), point.y + len*Math.sin(a));
   ctx.stroke(); ctx.restore();
+}
+// Top-level: dashed line used to show passes in preview and during playback
+function drawPassLine(from, to){
+  if(!from || !to || !Number.isFinite(from.x) || !Number.isFinite(from.y) || !Number.isFinite(to.x) || !Number.isFinite(to.y)) return;
+  ctx.save();
+  ctx.setLineDash([10, 6]);
+  ctx.strokeStyle = '#38bdf8'; // cyan dashed pass line
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function previewActionsForStep(stepIdx){
@@ -740,15 +871,20 @@ function previewActionsForStep(stepIdx){
     if (state.passPlan && state.passPlan.active) {
   drawPassLine(state.passPlan.start, state.passPlan.end);
 }
-    const overlap = (chkFlow && chkFlow.checked) ? (parseFloat(overlapRange.value)||0)/100 : 0;
-    if (tRaw >= 1 - overlap) {
-      if (state.index >= state.track.length - 2) { finishPlayback(); }
-      else {
-        const extra = (tRaw - (1 - overlap)) * dur * 1000; // ms overflow into next segment
-        state.index += 1; setupSegment();
-        state.playStart = performance.now() - extra; // carry time for seamless boundary
-      }
-    }
+    const overlap = (chkFlow && chkFlow.checked) ? (parseFloat(overlapRange.value) || 0) / 100 : 0;
+if (tRaw >= 1 - overlap) {
+  // If a pass didn’t fully finish by the boundary, force-complete it and move on
+  if (state.passPlan && state.passPlan.active) state.passPlan = null;
+
+  if (state.index >= state.track.length - 2) {
+    finishPlayback();
+  } else {
+    const extra = (tRaw - (1 - overlap)) * dur * 1000;
+    state.index += 1; setupSegment();
+    state.playStart = performance.now() - extra;
+  }
+}
+
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop); setStatus(`Playing from Step ${humanStep(state.index)}`);
@@ -1147,19 +1283,7 @@ function previewActionsForStep(stepIdx){
   const acts = state.segmentActions[stepIdx] || {};
   const byIdA = Object.fromEntries(A.map(o=>[o.id,o]));
   const byIdB = B ? Object.fromEntries(B.map(o=>[o.id,o])) : null;
-
-  function drawPassLine(from, to){
-  ctx.save();
-  ctx.setLineDash([10,6]);
-  ctx.strokeStyle = '#38bdf8'; // cyan-ish dashed pass line
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(from.x, from.y);
-  ctx.lineTo(to.x, to.y);
-  ctx.stroke();
-  ctx.restore();
-}
-
+ 
 
   for(const pid in acts){
     const act = acts[pid];
