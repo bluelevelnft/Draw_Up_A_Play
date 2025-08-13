@@ -46,8 +46,9 @@
         <button id="play">▶ Play (Space)</button>
         <button id="pause" disabled>⏸ Pause</button>
         <button id="undo" title="Remove last captured step">Undo Last (Z)</button>
-        <button id="reset">Reset to Step 1</button>
+        <button id="reset">Reset All</button>
         <span class="spacer"></span>
+        <div style="display:none">
         <label>3PT
           <select id="threeMode" title="Pick a 3-point spec">
             <option value="NBA" selected>NBA (23'9" apex / 3' from sideline)</option>
@@ -60,9 +61,10 @@
         <label><input id="flow" type="checkbox" checked/> Flow (no step stops)</label>
         <div class="slider"><span style="font-size:12px;color:#9ca3af">Overlap</span> <input id="overlap" type="range" min="0" max="20" value="2"/> <span id="overlapVal" class="value">2%</span></div>
         <div class="dial" id="dialPlayback" title="Playback speed"></div>
-        <div class="dial" id="dialStep" title="Step duration"></div>
+        <div class="dial" id="dialStep" title="Step duration"></div></div>
         </div>
-      <div class="row">
+     <div style="display:none">
+       <div class="row">
         <label>Ball Speed
           <select id="ballSpeed">
             <option value="1.0">1.0×</option>
@@ -123,7 +125,7 @@
     <button id="libExport">Export JSON</button>
     <input id="libImport" type="file" accept="application/json" style="display:none"/>
     <button id="libImportBtn">Import JSON</button>
-  </div>
+  </div></div>
   <div style="font-size:11px;color:#9ca3af;margin-left:auto">
     Shortcuts: <span class="kbd">⌘/Ctrl+S</span> Save As, <span class="kbd">⌘/Ctrl+O</span> Open
   </div>
@@ -611,6 +613,7 @@ function fullReset(){
 
 // Wire up the button
 btnClear.onclick = fullReset;
+btnReset.onclick = fullReset;
 
 function makePassPlan(A, B){
   const bi = A.findIndex(o => o.isBall);
@@ -938,7 +941,7 @@ if (tRaw >= 1 - overlap) {
   }
 
 function pause(){ state.isPlaying=false; btnPlay.disabled=false; btnPause.disabled=true; setStatus('Paused'); }
-function resetToZero(){ if (state.track.length){ state.index=1; applyFrame(state.track[1]?.frame || state.track[0].frame); updateTimelineUI(); drawEverything(); setStatus('Reset to step 1'); } }
+function resetToZero(){ if (state.track.length){ state.index=1; applyFrame(state.track[1]?.frame || state.track[0].frame); updateTimelineUI(); drawEverything(); setStatus('Reset All'); } }
 
 function updateTimelineUI(){
   elTimeline.innerHTML = '';
