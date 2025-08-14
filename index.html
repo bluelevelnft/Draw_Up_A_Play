@@ -614,6 +614,8 @@ function fullReset(){
 // Wire up the button
 btnClear.onclick = fullReset;
 btnReset.onclick = fullReset;
+btnUndo.onclick = undoStep;
+btnPause.onclick = pause;
 
 function makePassPlan(A, B){
   const bi = A.findIndex(o => o.isBall);
