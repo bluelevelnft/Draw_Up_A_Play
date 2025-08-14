@@ -15,7 +15,7 @@
   button:hover,select:hover,input[type="file"]::file-selector-button:hover{background:#111827}
   button[disabled]{opacity:.45;cursor:not-allowed}
   label{font-size:12px;color:var(--muted);display:inline-flex;gap:6px;align-items:center}
-  #court{display:block;margin:12px auto;background-color:#f5f5dc;border:2px solid #000}
+  #court{display:block;margin:12px auto;background-color:#f5f5dc;border:2px solid #000;touch-action: none;  /* lets us drag without the page scrolling */}
   .dial{width:74px;height:74px;border-radius:50%;position:relative;background:#0e1626;border:1px solid #293347; display:flex; align-items:center; justify-content:center}
   .dial svg{width:66px;height:66px}
   .dial .readout{position:absolute; bottom:-18px; left:0; right:0; text-align:center; font-size:11px; color:#9ca3af}
@@ -164,11 +164,22 @@ function attachDial(el, {values, labels, defaultIndex=0, onChange, title}){
     const d=`M ${p0.x} ${p0.y} A 30 30 0 ${large} 1 ${p.x} ${p.y}`; arc.setAttribute('d',d); knob.setAttribute('cx',p.x); knob.setAttribute('cy',p.y); read.textContent=labels[idx]; }
   function setIndex(i){ idx=Math.max(0,Math.min(values.length-1,i)); draw(); if(onChange) onChange(values[idx], labels[idx]); }
 
+  //   // Convert client (CSS) coordinates to the canvas's internal pixel coordinates
+  // function toCanvasXY(evt){
+  //   const rect = canvas.getBoundingClientRect();
+  //   const sx = canvas.width  / rect.width;
+  //   const sy = canvas.height / rect.height;
+  //   return {
+  //     mx: (evt.clientX - rect.left) * sx,
+  //     my: (evt.clientY - rect.top)  * sy
+  //   };
+  // }
+
   let dragging=false;
   svg.addEventListener('mousedown', (e)=>{ dragging=true; handle(e); });
   svg.addEventListener('mousemove', (e)=>{ if(dragging) handle(e); });
   window.addEventListener('mouseup', ()=>{ dragging=false; });
-  function handle(e){ const rect=svg.getBoundingClientRect(); const x=e.clientX-rect.left, y=e.clientY-rect.top; const a=Math.atan2(y-center.y, x-center.x); let deg=(a*180/Math.PI+360)%360; if(deg<135) deg=135; if(deg>405) deg=405; const t=(deg-135)/270; const i=Math.round(t*(values.length-1)); setIndex(i); }
+  function handle(e) { const rect = svg.getBoundingClientRect(); const x = e.clientX - rect.left, y = e.clientY - rect.top; const a = Math.atan2(y - center.y, x - center.x); let deg = (a * 180 / Math.PI + 360) % 360; if (deg < 135) deg = 135; if (deg > 405) deg = 405; const t = (deg - 135) / 270; const i = Math.round(t * (values.length - 1)); setIndex(i); }
 
   setIndex(defaultIndex); return { setIndex };
 }
@@ -186,6 +197,16 @@ canvas.width = TOTAL_LEN; canvas.height = TOTAL_WID;
 const HOOP_CTR = 2 * ft; // rim center slightly inside baseline // 63"
 const REATTACH_BUFFER_PX = 20;
 const MIN_KEEP_MOVE_PX = 20;
+// Convert client (CSS) coordinates to the canvas's internal pixel coordinates
+function toCanvasXY(evt){
+  const rect = canvas.getBoundingClientRect();
+  const sx = canvas.width  / rect.width;
+  const sy = canvas.height / rect.height;
+  return {
+    mx: (evt.clientX - rect.left) * sx,
+    my: (evt.clientY - rect.top)  * sy
+  };
+}
 
 
 // UI refs
@@ -216,6 +237,17 @@ const inpDur = document.getElementById('dur');
 // Show arrows before movement begins on each segment
 const PREVIEW_SEC = 0.9;
 
+// ===== State =====
+const state = {
+  track: [], index: 0, isPlaying:false, playStart:0, fromFrame:null, toFrame:null, passPlan:null,
+  movement: { globalMode:'smooth', globalCurv:0.8, overrides:{} },
+  selectedId: null,
+  segmentActions: {}, // { [stepIndex]: { [playerId]: {type,data} } }
+  lastDrag: {}, // { [playerId]: {points, from, to} }
+  startMarker: null, // set by Shift+Click on a step
+  lastClickedStep: 0,
+  _lastEnterAt: 0
+}
 
 function setStatus(msg){ elStatus.textContent = msg; }
 function getBallSpeed(){ return Math.max(0.1, parseFloat(ballSpeedSel.value)||1.5); }
@@ -293,6 +325,111 @@ function draw3ptHalf(xOrigin, mode){
 // Human-friendly step numbers for UI (1-based), while keeping storage 0-based
 function humanStep(i){ return i + 1; }           // 0 -> 1, 1 -> 2, ...
 function clampIdx(i){ return Math.max(0, Math.min(i, state.track.length-1)); }
+// === Canonical helpers (single copy only) ===
+
+// drawArrow: supports old style ('solid'|'dashed') AND new style ({...opts})
+function drawArrow(from, to, styleOrOpts) {
+  if (!from || !to) return;
+  const ok = v => Number.isFinite(v);
+  if (!ok(from.x)||!ok(from.y)||!ok(to.x)||!ok(to.y)) return;
+
+  // normalize args
+  let opts = {};
+  if (typeof styleOrOpts === 'string') {
+    opts.dashed = (styleOrOpts === 'dashed');
+  } else {
+    opts = styleOrOpts || {};
+  }
+  const {
+    color = '#ef4444',
+    width = 2,
+    alpha = 1,
+    dashed = false,
+    head = 10
+  } = opts;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.lineWidth = width;
+  ctx.strokeStyle = color;
+  if (dashed) ctx.setLineDash([10, 6]);
+
+  // shaft
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.stroke();
+
+  // head
+  const ang = Math.atan2(to.y - from.y, to.x - from.x);
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(to.x, to.y);
+  ctx.lineTo(to.x - head*Math.cos(ang - Math.PI/7), to.y - head*Math.sin(ang - Math.PI/7));
+  ctx.moveTo(to.x, to.y);
+  ctx.lineTo(to.x - head*Math.cos(ang + Math.PI/7), to.y - head*Math.sin(ang + Math.PI/7));
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Cyan dashed pass guide
+function drawPassLine(from, to) {
+  if(!from || !to) return;
+  const ok = v => Number.isFinite(v);
+  if(!ok(from.x)||!ok(from.y)||!ok(to.x)||!ok(to.y)) return;
+  ctx.save();
+  ctx.setLineDash([10, 6]);
+  ctx.strokeStyle = '#38bdf8';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.stroke();
+  ctx.restore();
+}
+const acts = state.track?.[state.index]?.actions || [];
+
+// Red preview arrows for next segment (when paused)
+function previewActionsForStep(stepIdx){
+  const A = state.track[stepIdx]?.frame || deepFrame();
+  const B = state.track[stepIdx+1]?.frame || null;
+  //const acts = state.segmentActions[stepIdx] || {};
+  const byIdA = Object.fromEntries(A.map(o=>[o.id,o]));
+  const byIdB = B ? Object.fromEntries(B.map(o=>[o.id,o])) : null;
+
+  for(const pid in acts){
+    const act = acts[pid];
+    const a = byIdA[+pid]; if(!a) continue;
+
+    let to = act?.data?.to;
+    if(byIdB && byIdB[+pid]) to = {x:byIdB[+pid].x, y:byIdB[+pid].y};
+    if(!to) continue;
+    const from = {x:a.x, y:a.y};
+
+    if (act.type==='straight') {
+      drawArrow(from, to, 'solid');
+    } else if (act.type==='random' && act.data?.bez) {
+      const {c1,c2} = act.data.bez;
+      ctx.save();
+      ctx.strokeStyle = '#e11d48'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(from.x, from.y);
+      ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, to.x, to.y);
+      ctx.stroke(); ctx.restore();
+      drawArrow({x:to.x-0.01, y:to.y-0.01}, to, 'solid');
+    } else if (act.type==='mimic' && act.data?.points?.length>1) {
+      ctx.save(); ctx.strokeStyle = '#e11d48'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
+      ctx.beginPath(); ctx.moveTo(act.data.points[0].x, act.data.points[0].y);
+      for(let i=1;i<act.data.points.length;i++) ctx.lineTo(act.data.points[i].x, act.data.points[i].y);
+      ctx.stroke(); ctx.restore();
+      drawArrow(act.data.points[act.data.points.length-2], to, 'dashed');
+    } else if (act.type==='screen') {
+      drawArrow(from, to, 'solid');
+      const ang = Math.atan2(to.y-from.y, to.x-from.x);
+      // your existing drawScreenCap(...) is fine
+      if (typeof drawScreenCap === 'function') drawScreenCap(to, ang);
+    }
+  }
+}
 
 // ===== Sprites =====
 let AUTO_ID = 1;
@@ -310,17 +447,6 @@ function catmullToBezier(P0,P1,P2,P3,curv){ const k=(curv||0)/6; return { c1:{x:
 function polyLength(pts){ let L=0; for(let i=1;i<pts.length;i++){ const dx=pts[i].x-pts[i-1].x, dy=pts[i].y-pts[i-1].y; L+=Math.hypot(dx,dy);} return L; }
 function samplePolyline(pts,t){ if(!pts||pts.length<2) return pts?.[0]||{x:0,y:0}; const L=polyLength(pts); let target=L*t, acc=0; for(let i=1;i<pts.length;i++){ const a=pts[i-1], b=pts[i]; const seg=Math.hypot(b.x-a.x,b.y-a.y); if(acc+seg>=target){ const k=(target-acc)/seg; return {x:a.x+(b.x-a.x)*k, y:a.y+(b.y-a.y)*k}; } acc+=seg;} return pts[pts.length-1]; }
 
-// ===== State =====
-const state = {
-  track: [], index: 0, isPlaying:false, playStart:0, fromFrame:null, toFrame:null, passPlan:null,
-  movement: { globalMode:'smooth', globalCurv:0.8, overrides:{} },
-  selectedId: null,
-  segmentActions: {}, // { [stepIndex]: { [playerId]: {type,data} } }
-  lastDrag: {}, // { [playerId]: {points, from, to} }
-  startMarker: null, // set by Shift+Click on a step
-  lastClickedStep: 0,
-  _lastEnterAt: 0
-};
 
 function ensureOverride(id){ return (state.movement.overrides[id] ||= { mode:'smooth', curv: state.movement.globalCurv }); }
 function getPathModeFor(id){ return (state.movement.overrides[id]?.mode) || state.movement.globalMode; }
@@ -432,7 +558,7 @@ function applyMenuSelection(){ if(!menuEl||!menuTarget||!dragStartPos) return; c
   else if(sel==='random'){ const bez = computeRandomBezier(from,to,curveDir); setSegmentAction(stepIdx, menuTarget.id, {type:'random', data:{bez, from, to, curveDir}}); }
   drawEverything(); setStatus('Action set: '+sel + (sel==='random' ? ' ('+curveDir+')' : '')); }
 
-canvas.addEventListener('mousedown', e=>{ if(state.isPlaying) return; const r=canvas.getBoundingClientRect(); const mx=e.clientX-r.left, my=e.clientY-r.top; hideMenu();
+canvas.addEventListener('mousedown', e=>{ if(state.isPlaying) return; const r=canvas.getBoundingClientRect(); const { mx, my } = toCanvasXY(e); hideMenu();
   for(const s of [...sprites].reverse()){ if(Math.hypot(mx-s.x,my-s.y) <= s.radius)
     {if (s.isBall) {
   if (s.holderId) s.lastDetachedFromId = s.holderId;
@@ -450,7 +576,7 @@ canvas.addEventListener('mousedown', e=>{ if(state.isPlaying) return; const r=ca
   }
   drawEverything();
 });
-canvas.addEventListener('mousemove', e=>{ if(!dragging) return; const r=canvas.getBoundingClientRect(); const mx=e.clientX-r.left, my=e.clientY-r.top; if(dragging.isBall && angleDrag.active && angleDrag.holder){ const ang=Math.atan2(my-angleDrag.holder.y, mx-angleDrag.holder.x); dragging.holdAngle=ang; updateBallFollow(); }  else {
+canvas.addEventListener('mousemove', e=>{ if(!dragging) return; const r=canvas.getBoundingClientRect(); const { mx, my } = toCanvasXY(e); if(dragging.isBall && angleDrag.active && angleDrag.holder){ const ang=Math.atan2(my-angleDrag.holder.y, mx-angleDrag.holder.x); dragging.holdAngle=ang; updateBallFollow(); }  else {
   dragMovedPx += Math.hypot(mx-dragging.x, my-dragging.y);
   dragging.x = mx; dragging.y = my;
 
@@ -686,6 +812,24 @@ function makePassPlan(A, B){
   // Otherwise: not a pass
   return null;
 }
+function drawRemainingLine(from, to, {color='#ef4444', width=2, dashed=false, alpha=1} = {}){
+  if(!from || !to) return;
+  const ok = v => Number.isFinite(v);
+  if(!ok(from.x)||!ok(from.y)||!ok(to.x)||!ok(to.y)) return;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.lineWidth = width;
+  ctx.strokeStyle = color;
+  if (dashed) ctx.setLineDash([10,6]);
+
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.stroke();
+
+  ctx.restore();
+}
 
 
 // ===== Play: start at CURRENT step, stop at end (no loop) + screen bubble =====
@@ -736,99 +880,101 @@ function play(){
     const baseT = useEase ? easeInOutCubic(tRaw) : tRaw;
     const A = state.fromFrame, B = state.toFrame;
     // --- PREVIEW PHASE: show arrows & (if any) pass line before movement starts
-  if (state.previewUntil && now < state.previewUntil) {
-    // lock positions to the start frame (A)
-    applyFrame(A);
-    // draw court + previews + (possible) pass line + sprites
-    drawCourt();
-      try {
-        drawTrailsDuringMovement(state.index, A, B, tRaw);
-        if (state.passPlan && state.passPlan.active) {
-          drawRemainingPass(state.passPlan);
+    if (state.previewUntil && now < state.previewUntil) {
+      // lock positions to the start frame (A)
+      applyFrame(A);
+      // draw court + previews + (possible) pass line + sprites
+      drawCourt();
+        try {
+          drawTrailsDuringMovement(state.index, A, B, tRaw);
+          if (state.passPlan && state.passPlan.active) {
+            drawRemainingPass(state.passPlan);
+          }
+        } catch (err) {
+          console.warn('Trail draw skipped:', err);
         }
-      } catch (err) {
-        console.warn('Trail draw skipped:', err);
+        
+        drawSprites();
+
+      // reuse your existing preview overlay (if you added it earlier)
+      if (typeof previewActionsForStep === 'function') {
+        previewActionsForStep(state.index);
+      }
+      if (state.passPlan && state.passPlan.active) {
+        drawPassLine(state.passPlan.start, state.passPlan.end);
       }
       drawSprites();
-
-    // reuse your existing preview overlay (if you added it earlier)
-    if (typeof previewActionsForStep === 'function') {
-      previewActionsForStep(state.index);
+      requestAnimationFrame(loop);
+      return; // don't advance movement yet
     }
-    if (state.passPlan && state.passPlan.active) {
-      drawPassLine(state.passPlan.start, state.passPlan.end);
-    }
-    drawSprites();
-    requestAnimationFrame(loop);
-    return; // don't advance movement yet
-  }
-  // first tick after preview: reset playStart so duration timing excludes preview
-  if (state.previewUntil) {
-    state.playStart = performance.now();
-    state.previewUntil = 0;
-  }
+      // first tick after preview: reset playStart so duration timing excludes preview
+      if (state.previewUntil) {
+        state.playStart = performance.now();
+        state.previewUntil = 0;
+      }
 
       const idxPrev = Math.max(0, state.index-1); const idxNext2 = Math.min(state.track.length-1, state.index+2);
       const F0 = state.track[idxPrev]?.frame || A; const F3 = state.track[idxNext2]?.frame || B;
 
       // Compute and assign player positions (no slowdowns)
-  players().forEach((s)=>{
-    const i = sprites.indexOf(s); const a=A[i]; const b=B[i]||a;
-    const iPrev = Math.max(0, state.index-1); const iNext2 = Math.min(state.track.length-1, state.index+2);
-    const p0=state.track[iPrev]?.frame?.[i]||a, p1=a, p2=b, p3=state.track[iNext2]?.frame?.[i]||b;
-    let tLocalRaw = tRaw; const act = getSegmentAction(state.index, s.id);
-    if (act && act.type==='screen'){ const frac=Math.min(1, SCREEN_BUBBLE_SEC/dur); tLocalRaw = Math.max(0, (tRaw - frac)/(1 - frac)); }
-    const tLocal = chkEase.checked ? easeInOutCubic(tLocalRaw) : tLocalRaw;
-    let pos;
-    if (act){
-      if (act.type==='straight' || act.type==='screen') pos = { x: a.x + (b.x-a.x)*tLocal, y: a.y + (b.y-a.y)*tLocal };
-      else if (act.type==='random' && act.data?.bez){ const {c1,c2}=act.data.bez; pos = bezierEval({x:a.x,y:a.y}, c1,c2, {x:b.x,y:b.y}, tLocal); }
-      else if (act.type==='mimic' && act.data?.points?.length>1){ const drift=Math.hypot(a.x-act.data.from.x,a.y-act.data.from.y)+Math.hypot(b.x-act.data.to.x,b.y-act.data.to.y); pos = (drift<12)? samplePolyline(act.data.points,tLocal) : {x:a.x+(b.x-a.x)*tLocal, y:a.y+(b.y-a.y)*tLocal}; }
-      else pos = { x: a.x + (b.x-a.x)*tLocal, y: a.y + (b.y-a.y)*tLocal };
+      players().forEach((s)=>{
+        const i = sprites.indexOf(s); const a=A[i]; const b=B[i]||a;
+        const iPrev = Math.max(0, state.index-1); const iNext2 = Math.min(state.track.length-1, state.index+2);
+        const p0=state.track[iPrev]?.frame?.[i]||a, p1=a, p2=b, p3=state.track[iNext2]?.frame?.[i]||b;
+        let tLocalRaw = tRaw; const act = getSegmentAction(state.index, s.id);
+        if (act && act.type==='screen'){ const frac=Math.min(1, SCREEN_BUBBLE_SEC/dur); tLocalRaw = Math.max(0, (tRaw - frac)/(1 - frac)); }
+        const tLocal = chkEase.checked ? easeInOutCubic(tLocalRaw) : tLocalRaw;
+        let pos;
+        if (act){
+          if (act.type==='straight' || act.type==='screen') pos = { x: a.x + (b.x-a.x)*tLocal, y: a.y + (b.y-a.y)*tLocal };
+          else if (act.type==='random' && act.data?.bez){ const {c1,c2}=act.data.bez; pos = bezierEval({x:a.x,y:a.y}, c1,c2, {x:b.x,y:b.y}, tLocal); }
+          else if (act.type==='mimic' && act.data?.points?.length>1){ const drift=Math.hypot(a.x-act.data.from.x,a.y-act.data.from.y)+Math.hypot(b.x-act.data.to.x,b.y-act.data.to.y); pos = (drift<12)? samplePolyline(act.data.points,tLocal) : {x:a.x+(b.x-a.x)*tLocal, y:a.y+(b.y-a.y)*tLocal}; }
+          else pos = { x: a.x + (b.x-a.x)*tLocal, y: a.y + (b.y-a.y)*tLocal };
+        } else {
+          const mode=getPathModeFor(s.id); const curv=getCurvFor(s.id);
+          if (mode==='smooth' && curv>0){ const {c1,c2}=catmullToBezier(p0,p1,p2,p3,curv); pos = bezierEval({x:p1.x,y:p1.y}, c1,c2, {x:p2.x,y:p2.y}, tLocal); }
+          else pos = { x: a.x + (b.x-a.x)*tLocal, y: a.y + (b.y-a.y)*tLocal };
+        }
+        s.x = pos.x; s.y = pos.y;
+      });
+
+      enforceAllPlayerConstraints(3);
+
+      // Ball
+      const ball = getBall();
+      if (state.passPlan && state.passPlan.active){
+        if (state.passPlan && state.passPlan.active){
+          const p = state.passPlan;
+          const n = Math.max(0, Math.min(1, (tRaw - (p.delay||0)) * (p.speed||1)));
+          p.progress = n;
+
+            if (_ptOk(p.start) && _ptOk(p.end)) {
+              if (p.type === 'bounce' && _ptOk(p.bounce)) {
+                const frac = 0.6;
+                const segA = Math.min(n/frac, 1);
+                const segB = Math.max((n-frac)/(1-frac), 0);
+                const pos = (n < frac) ? lerpPt(p.start, p.bounce, segA) : lerpPt(p.bounce, p.end, segB);
+                ball.x = pos.x; ball.y = pos.y;
+              } else {
+                const pos = lerpPt(p.start, p.end, n);
+                ball.x = pos.x; ball.y = pos.y;
+              }
+            }
+
+            // mid-flight: ball has no holder
+            ball.holderId = null;
+
+            // catch -> hand ownership to receiver & clear plan
+            if (n >= 1){
+              ball.holderId = p.catchId;
+              ball.holdAngle = p.catchAngle || 0;
+              updateBallFollow();
+              state.passPlan = null;
+            }
+      }
+
+
     } else {
-      const mode=getPathModeFor(s.id); const curv=getCurvFor(s.id);
-      if (mode==='smooth' && curv>0){ const {c1,c2}=catmullToBezier(p0,p1,p2,p3,curv); pos = bezierEval({x:p1.x,y:p1.y}, c1,c2, {x:p2.x,y:p2.y}, tLocal); }
-      else pos = { x: a.x + (b.x-a.x)*tLocal, y: a.y + (b.y-a.y)*tLocal };
-    }
-    s.x = pos.x; s.y = pos.y;
-});
-
-enforceAllPlayerConstraints(3);
-
-    // Ball
-    const ball = getBall();
-    if (state.passPlan && state.passPlan.active){if (state.passPlan && state.passPlan.active){
-  const p = state.passPlan;
-  const n = Math.max(0, Math.min(1, (tRaw - (p.delay||0)) * (p.speed||1)));
-  p.progress = n;
-
-  if (_ptOk(p.start) && _ptOk(p.end)) {
-    if (p.type === 'bounce' && _ptOk(p.bounce)) {
-      const frac = 0.6;
-      const segA = Math.min(n/frac, 1);
-      const segB = Math.max((n-frac)/(1-frac), 0);
-      const pos = (n < frac) ? lerpPt(p.start, p.bounce, segA) : lerpPt(p.bounce, p.end, segB);
-      ball.x = pos.x; ball.y = pos.y;
-    } else {
-      const pos = lerpPt(p.start, p.end, n);
-      ball.x = pos.x; ball.y = pos.y;
-    }
-  }
-
-  // mid-flight: ball has no holder
-  ball.holderId = null;
-
-  // catch -> hand ownership to receiver & clear plan
-  if (n >= 1){
-    ball.holderId = p.catchId;
-    ball.holdAngle = p.catchAngle || 0;
-    updateBallFollow();
-    state.passPlan = null;
-  }
-}
-
-
-      } else {
       const bi = A.findIndex(o => o.isBall);
       if (bi >= 0) {
         const aBall = A[bi], bBall = B[bi] || aBall;
@@ -847,83 +993,73 @@ enforceAllPlayerConstraints(3);
       }
     }
 
-    function drawArrow(from, to, style='solid'){
-  ctx.save();
-  if(style==='dashed'){ ctx.setLineDash([8,6]); }
-  ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y);
-  ctx.strokeStyle = '#e11d48'; ctx.lineWidth = 2; ctx.stroke();
-  const ang = Math.atan2(to.y-from.y, to.x-from.x), ah = 10;
-  ctx.beginPath();
-  ctx.moveTo(to.x, to.y);
-  ctx.lineTo(to.x - ah*Math.cos(ang - Math.PI/6), to.y - ah*Math.sin(ang - Math.PI/6));
-  ctx.lineTo(to.x - ah*Math.cos(ang + Math.PI/6), to.y - ah*Math.sin(ang + Math.PI/6));
-  ctx.closePath(); ctx.fillStyle = '#e11d48'; ctx.fill();
-  ctx.restore();
-}
+      // --- Player movement trails (during playback) ---
+      try {
+        // Build quick lookup for A/B by id (in case ordering differs)
+        const byIdA = Object.fromEntries(A.map(o => [o.id, o]));
+        const byIdB = Object.fromEntries(B.map(o => [o.id, o]));
 
-function drawScreenCap(point, normalAngle){
-  ctx.save(); ctx.strokeStyle = '#e11d48'; ctx.lineWidth = 4;
-  const len = 14, a = normalAngle + Math.PI/2;
-  ctx.beginPath();
-  ctx.moveTo(point.x - len*Math.cos(a), point.y - len*Math.sin(a));
-  ctx.lineTo(point.x + len*Math.cos(a), point.y + len*Math.sin(a));
-  ctx.stroke(); ctx.restore();
-}
-// Top-level: dashed line used to show passes in preview and during playback
-function drawPassLine(from, to){
-  if(!from || !to || !Number.isFinite(from.x) || !Number.isFinite(from.y) || !Number.isFinite(to.x) || !Number.isFinite(to.y)) return;
-  ctx.save();
-  ctx.setLineDash([10, 6]);
-  ctx.strokeStyle = '#38bdf8'; // cyan dashed pass line
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(from.x, from.y);
-  ctx.lineTo(to.x, to.y);
-  ctx.stroke();
-  ctx.restore();
-}
+        for (const p of players()){
+          const a = byIdA[p.id], b = byIdB[p.id];
+          if (!a || !b) continue;
 
-function previewActionsForStep(stepIdx){
-  const A = state.track[stepIdx]?.frame || deepFrame();
-  const B = state.track[stepIdx+1]?.frame || null;
-  const acts = state.segmentActions[stepIdx] || {};
-  const byIdA = Object.fromEntries(A.map(o=>[o.id,o]));
-  const byIdB = B ? Object.fromEntries(B.map(o=>[o.id,o])) : null;
+          // Skip micro-movements
+          const dx = b.x - a.x, dy = b.y - a.y;
+          if (Math.hypot(dx,dy) < 2) continue;
 
-  for(const pid in acts){
-    const act = acts[pid];
-    const a = byIdA[+pid]; if(!a) continue;
+          // Current live pos is p.x/p.y (already updated this frame)
+          const from = { x: p.x, y: p.y };
+          const to   = { x: b.x, y: b.y };
 
-    let to = act?.data?.to;
-    if(byIdB && byIdB[+pid]) to = {x:byIdB[+pid].x, y:byIdB[+pid].y};
-    if(!to) continue;
-    const from = {x:a.x, y:a.y};
+          // Style by action if you want (screen = amber), else red
+          const act = getSegmentAction(state.index, p.id);
+          const color = (act && act.type === 'screen') ? '#f59e0b' : '#ef4444';
 
-    if(act.type==='straight'){
-      drawArrow(from, to, 'solid');
-    } else if(act.type==='random' && act.data?.bez){
-      const {c1,c2} = act.data.bez;
-      ctx.save();
-      ctx.strokeStyle = '#e11d48'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(from.x, from.y);
-      ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, to.x, to.y);
-      ctx.stroke(); ctx.restore();
-      drawArrow({x:to.x-0.01, y:to.y-0.01}, to, 'solid');
-    } else if(act.type==='mimic' && act.data?.points?.length>1){
-      ctx.save(); ctx.strokeStyle = '#e11d48'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
-      ctx.beginPath(); ctx.moveTo(act.data.points[0].x, act.data.points[0].y);
-      for(let i=1;i<act.data.points.length;i++) ctx.lineTo(act.data.points[i].x, act.data.points[i].y);
-      ctx.stroke(); ctx.restore();
-      drawArrow(act.data.points[act.data.points.length-2], to, 'dashed');
-    } else if(act.type==='screen'){
-      drawArrow(from, to, 'solid');
-      const ang = Math.atan2(to.y-from.y, to.x-from.x);
-      drawScreenCap(to, ang);
+          // Optional: fade as it gets short (looks nice, doesn’t flicker)
+          const total = Math.hypot(dx,dy);
+          const left  = Math.hypot(to.x - from.x, to.y - from.y);
+          const alpha = Math.max(0.25, Math.min(1, left / (total || 1)));
+
+          drawRemainingLine(from, to, { color, width:2, dashed:false, alpha });
+        }
+      } catch(e) {
+        // never block playback if drawing fails for any reason
+        // console.debug('trail draw skipped', e);
+      }
+
+    // draw in the right order during playback
+drawCourt();
+
+    // player movement trails: from current live pos (p.x,y) to the step-end (B)
+    try {
+      const A = state.fromFrame, B = state.toFrame;
+      const byIdB = Object.fromEntries(B.map(o => [o.id, o]));
+      for (const p of players()) {
+        const b = byIdB[p.id]; if (!b) continue;
+        const from = { x: p.x, y: p.y };   // current frame’s live position
+        const to   = { x: b.x, y: b.y };   // end of segment
+        const dx = to.x - from.x, dy = to.y - from.y;
+        if (Math.hypot(dx,dy) < 2) continue;
+
+        const act = getSegmentAction(state.index, p.id);
+        const color = (act && act.type === 'screen') ? '#f59e0b' : '#ef4444';
+        const total = Math.hypot(b.x - (A.find(o=>o.id===p.id)?.x||p.x),
+                                b.y - (A.find(o=>o.id===p.id)?.y||p.y));
+        const left  = Math.hypot(dx, dy);
+        const alpha = Math.max(0.25, Math.min(1, left / (total || 1)));
+
+        drawArrow(from, to, { color, width:2, alpha });
+      }
+    } catch(e){ /* never block playback if trails fail */ }
+
+    // dashed pass guide for the active pass plan
+    if (state.passPlan && state.passPlan.active) {
+      drawPassLine(state.passPlan.start, state.passPlan.end);
     }
-  }
-}
 
-    drawEverything(tRaw, dur);
+    // finally, sprites on top
+    drawSprites();
+
     if (state.passPlan && state.passPlan.active) {
   drawPassLine(state.passPlan.start, state.passPlan.end);
 }
@@ -978,11 +1114,39 @@ function updateTimelineUI(){
 
 
 function drawEverything(){
-  drawCourt();
-  if(!state.isPlaying){
-    previewActionsForStep(state.index);
-  }
-  drawSprites();
+    // draw in the right order during playback
+    drawCourt();
+
+    // player movement trails: from current live pos (p.x,y) to the step-end (B)
+    try {
+      const A = state.fromFrame, B = state.toFrame;
+      const byIdB = Object.fromEntries(B.map(o => [o.id, o]));
+      for (const p of players()) {
+        const b = byIdB[p.id]; if (!b) continue;
+        const from = { x: p.x, y: p.y };   // current frame’s live position
+        const to   = { x: b.x, y: b.y };   // end of segment
+        const dx = to.x - from.x, dy = to.y - from.y;
+        if (Math.hypot(dx,dy) < 2) continue;
+
+        const act = getSegmentAction(state.index, p.id);
+        const color = (act && act.type === 'screen') ? '#f59e0b' : '#ef4444';
+        const total = Math.hypot(b.x - (A.find(o=>o.id===p.id)?.x||p.x),
+                                b.y - (A.find(o=>o.id===p.id)?.y||p.y));
+        const left  = Math.hypot(dx, dy);
+        const alpha = Math.max(0.25, Math.min(1, left / (total || 1)));
+
+        drawArrow(from, to, { color, width:2, alpha });
+      }
+    } catch(e){ /* never block playback if trails fail */ }
+
+    // dashed pass guide for the active pass plan
+    if (state.passPlan && state.passPlan.active) {
+      drawPassLine(state.passPlan.start, state.passPlan.end);
+    }
+
+    // finally, sprites on top
+    drawSprites();
+
 }
 
 // ===== Save/Load (files) =====
@@ -1228,7 +1392,12 @@ window.addEventListener('keydown', (e)=>{
   const tag = (e.target && e.target.tagName) || '';
   if (tag === 'INPUT' || tag === 'SELECT') return;
 
-  if (e.code === 'KeyC'){ captureStep(); }
+// Capture (C)
+if (e.code === 'KeyC' || e.key === 'c' || e.key === 'C'){
+  e.preventDefault();
+  e.stopPropagation();
+  captureStep();
+}
   else if (e.code === 'KeyZ'){ undoStep(); }
   else if (e.code === 'Space'){ e.preventDefault(); state.isPlaying ? pause() : play(); }
   else if (e.code === 'ArrowLeft'){ prevStep(); }
@@ -1310,19 +1479,7 @@ function drawSprites(){
     s.draw();
   }
 }
-function drawArrow(from, to, style='solid'){
-  ctx.save();
-  if(style==='dashed'){ ctx.setLineDash([8,6]); }
-  ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y);
-  ctx.strokeStyle = '#e11d48'; ctx.lineWidth = 2; ctx.stroke();
-  const ang = Math.atan2(to.y-from.y, to.x-from.x), ah = 10;
-  ctx.beginPath();
-  ctx.moveTo(to.x, to.y);
-  ctx.lineTo(to.x - ah*Math.cos(ang - Math.PI/6), to.y - ah*Math.sin(ang - Math.PI/6));
-  ctx.lineTo(to.x - ah*Math.cos(ang + Math.PI/6), to.y - ah*Math.sin(ang + Math.PI/6));
-  ctx.closePath(); ctx.fillStyle = '#e11d48'; ctx.fill();
-  ctx.restore();
-}
+
 
 function drawScreenCap(point, normalAngle){
   ctx.save(); ctx.strokeStyle = '#e11d48'; ctx.lineWidth = 4;
@@ -1333,13 +1490,7 @@ function drawScreenCap(point, normalAngle){
   ctx.stroke(); ctx.restore();
 }
 
-function previewActionsForStep(stepIdx){
-  const A = state.track[stepIdx]?.frame || deepFrame();
-  const B = state.track[stepIdx+1]?.frame || null;
-  const acts = state.segmentActions[stepIdx] || {};
-  const byIdA = Object.fromEntries(A.map(o=>[o.id,o]));
-  const byIdB = B ? Object.fromEntries(B.map(o=>[o.id,o])) : null;
- 
+
 
   for(const pid in acts){
     const act = acts[pid];
@@ -1372,16 +1523,9 @@ function previewActionsForStep(stepIdx){
       drawScreenCap(to, ang);
     }
   }
-}
-function drawEverything(){
-  drawCourt();
-  if(!state.isPlaying){
-    previewActionsForStep(state.index);
-  }
-  drawSprites();
-}
 
-// ===== Boot =====
+ 
+
 function selfTest(){
   try{
     console.assert(canvas && ctx, 'Canvas context available');
@@ -1391,15 +1535,23 @@ function selfTest(){
   } catch(e){ console.error('Self-test failed', e); }
 }
 
-// initial paint
-// selfTest();
-// restore();
-// drawEverything();
-selfTest();
-restore();
-seedStarterPack();
-refreshLibUI('');
-drawEverything();
+// Guarded init so a missing helper can’t nuke the first paint.
+(function init(){
+  try {
+    selfTest();            // paint the court immediately
+    restore();             // restore any saved track
+  } catch(e){
+    console.error('Init restore error:', e);
+  }
+
+  // Always give the user a frame even if something else fails
+  try { drawEverything(); } catch(e){ console.error('First paint error:', e); }
+
+  // Optional helpers – only call if they exist
+  try { if (typeof seedStarterPack === 'function') seedStarterPack(); } catch(e){ console.warn('seedStarterPack failed:', e); }
+  try { if (typeof refreshLibUI   === 'function') refreshLibUI(''); } catch(e){ console.warn('refreshLibUI failed:', e); }
+})();
+
 
 </script>
 </body>
