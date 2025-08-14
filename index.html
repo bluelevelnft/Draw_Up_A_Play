@@ -712,6 +712,11 @@ function fullReset(){
   state._lastEnterAt = 0;
   state.selectedId = null;
 
+  // NEW: forget any in-flight segment references so no trails draw
+  state.fromFrame = null;            // NEW
+  state.toFrame   = null;            // NEW
+  state.previewUntil = 0;            // NEW
+
   // kill any inline action menu if present
   try { hideMenu && hideMenu(); } catch(_) {}
 
@@ -736,6 +741,7 @@ function fullReset(){
   drawEverything();
   setStatus('Reset: track cleared, players restored to start, uploads cleared.');
 }
+
 
 // Wire up the button
 btnClear.onclick = fullReset;
