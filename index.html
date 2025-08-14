@@ -41,6 +41,8 @@
     <div class="panel">
       <div class="row">
         <button id="capture">Capture Step (C)</button>
+        <button id="insertStep" title="Insert a new step after the selected step">Insert Step</button>
+        <button id="deleteStep" title="Delete the selected step">Delete Step</button>
         <button id="prev">◀ Prev (←)</button>
         <button id="next">Next (→) ▶</button>
         <button id="play">▶ Play (Space)</button>
@@ -336,9 +338,98 @@ function draw3ptHalf(xOrigin, mode){
 }
 // ===== forcing the UI to show 1 instead of 0 for step counting
 // Human-friendly step numbers for UI (1-based), while keeping storage 0-based
-function humanStep(i){ return i + 1; }           // 0 -> 1, 1 -> 2, ...
+function humanStep(i){ return (i|0) + 1; }          // 0 -> 1, 1 -> 2, ...
 function clampIdx(i){ return Math.max(0, Math.min(i, state.track.length-1)); }
 // === Canonical helpers (single copy only) ===
+
+// modify steps
+function shiftActionsUpFrom(k){
+  // for insertion: steps >= k shift to index+1
+  const out = {};
+  for (const key in state.segmentActions){
+    const i = +key;
+    if (i >= k) out[i+1] = state.segmentActions[i];
+    else out[i] = state.segmentActions[i];
+  }
+  state.segmentActions = out;
+}
+
+function shiftActionsDownFrom(k){
+  // for deletion: drop k; steps > k shift to index-1
+  const out = {};
+  for (const key in state.segmentActions){
+    const i = +key;
+    if (i < k) out[i] = state.segmentActions[i];
+    else if (i > k) out[i-1] = state.segmentActions[i];
+    // i === k is removed
+  }
+  state.segmentActions = out;
+}
+
+function insertStepAfter(idx){
+  if (!Array.isArray(state.track)) state.track = [];
+  // if there are no steps yet, behave like first capture
+  if (state.track.length === 0){
+    const dur0 = Math.max(0.1, parseFloat(inpDur.value)||1);
+    state.track.push({ frame: deepFrame(), duration: dur0 });
+    state.index = 0;
+    persist(); updateTimelineUI(); setStatus(`Captured step ${humanStep(state.index)}`);
+    drawEverything();
+    return;
+  }
+
+  const dur = Math.max(0.1, parseFloat(inpDur.value)||1);
+  const frame = deepFrame();
+  const insertAt = Math.min(Math.max(0, idx + 1), state.track.length);
+
+  // stop any playback and clear in-flight segment
+  state.isPlaying = false;
+  state.passPlan = null;
+  state.fromFrame = null;
+  state.toFrame   = null;
+  btnPause && (btnPause.disabled = true);
+  btnPlay  && (btnPlay.disabled  = false);
+
+  state.track.splice(insertAt, 0, { frame, duration: dur });
+  shiftActionsUpFrom(insertAt);
+
+  state.index = insertAt;                // select the new step
+  persist(); updateTimelineUI();
+  setStatus(`New Step ${humanStep(insertAt)} added`);
+  drawEverything();
+}
+
+function deleteStepAt(idx){
+  if (!Array.isArray(state.track) || state.track.length === 0){
+    setStatus('No steps to delete'); return;
+  }
+  if (idx < 0 || idx >= state.track.length){ return; }
+
+  // stop any playback and clear in-flight segment
+  state.isPlaying = false;
+  state.passPlan = null;
+  state.fromFrame = null;
+  state.toFrame   = null;
+  btnPause && (btnPause.disabled = true);
+  btnPlay  && (btnPlay.disabled  = false);
+
+  // remove the step
+  state.track.splice(idx, 1);
+  shiftActionsDownFrom(idx);
+
+  // clamp selection and show that frame
+  if (state.index >= state.track.length) state.index = state.track.length - 1;
+  if (state.index < 0) state.index = 0;
+
+  if (state.track[state.index]){
+    applyFrame(state.track[state.index].frame);
+  }
+
+  persist(); updateTimelineUI();
+  setStatus(`Step ${humanStep(idx)} deleted`);
+  drawEverything();
+}
+
 
 // drawArrow: supports old style ('solid'|'dashed') AND new style ({...opts})
 function drawArrow(from, to, styleOrOpts) {
@@ -653,6 +744,8 @@ const btnClear=document.getElementById('clear');
 const btnPng=document.getElementById('exportPng');
 const chkOnion=document.getElementById('onion');
 const chkEase=document.getElementById('ease');
+const btnInsert  = document.getElementById('insertStep');
+const btnDelete  = document.getElementById('deleteStep');
 
 // helper: distance moved check (exists guard for double-includes)
 if (typeof movedMoreThan !== 'function') {
@@ -1225,6 +1318,15 @@ btnSave.onclick=()=>{ const data=JSON.stringify({ meta:{version:9, created:new D
 inpLoad.onchange=e=>{ const file=e.target.files[0]; if(!file) return; const reader=new FileReader(); reader.onload=()=>{ try{ const obj=JSON.parse(reader.result); const arr=Array.isArray(obj)?obj:obj.track; if(!Array.isArray(arr) || !arr.length) throw new Error('Invalid track'); state.track=arr; state.index=Math.min(1, state.track.length-1); applyFrame(state.track[state.index].frame); updateTimelineUI(); if(obj.movement) state.movement=obj.movement; if(obj.segmentActions) state.segmentActions=obj.segmentActions; drawEverything(); persist(); setStatus('Track loaded'); }catch(err){ setStatus('Load failed: '+err.message); } }; reader.readAsText(file); };
 //btnClear.onclick=()=>{ state.track=[]; state.index=0; state.segmentActions={}; persist(); updateTimelineUI(); setStatus('Cleared track'); };
 btnPng.onclick=()=>{ const a=document.createElement('a'); a.download='frame.png'; a.href=canvas.toDataURL('image/png'); a.click(); };
+btnInsert?.addEventListener('click', (e)=>{
+  e.preventDefault(); e.stopPropagation();
+  insertStepAfter(state.index|0);
+});
+
+btnDelete?.addEventListener('click', (e)=>{
+  e.preventDefault(); e.stopPropagation();
+  deleteStepAt(state.index|0);
+});
 
 // ===== Named Library (localStorage) =====
 const LIB_KEY = 'play_library_v1';
