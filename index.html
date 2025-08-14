@@ -569,9 +569,6 @@ canvas.addEventListener('mousedown', e=>{ if(state.isPlaying) return; const r=ca
   dragMovedPx = 0;
   break;
 }
-
-
-
       dragging=s; dragTrail=[{x:s.x,y:s.y}]; dragStartPos={x:s.x,y:s.y}; dragMovedPx=0; break; }
   }
   drawEverything();
@@ -596,15 +593,31 @@ canvas.addEventListener('mousemove', e=>{ if(!dragging) return; const r=canvas.g
  drawEverything(); });
 window.addEventListener('mouseup', e=>{ if(!dragging) return; const was=dragging; dragging=null; angleDrag={active:false, holder:null}; if(!was.isBall && dragTrail.length>1 && dragMovedPx>5){ const rect=canvas.getBoundingClientRect(); showMenuFor(was, rect.left+was.x, rect.top+was.y); } });
 
+// === Touch → Mouse bridge (mobile dragging) ===
+canvas.addEventListener('touchstart', (e) => {
+  if (state.isPlaying) return;
+  e.preventDefault();
+  const t = e.touches[0];
+  canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: t.clientX, clientY: t.clientY, bubbles: true }));
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  if (!dragging) return;
+  e.preventDefault();
+  const t = e.touches[0];
+  canvas.dispatchEvent(new MouseEvent('mousemove', { clientX: t.clientX, clientY: t.clientY, bubbles: true }));
+}, { passive: false });
+
+window.addEventListener('touchend', (e) => {
+  if (!dragging) return;
+  e.preventDefault();
+  window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+}, { passive: false });
+
+
 function syncSelUI(){ const id=state.selectedId; if(!id) return; if(overrideSel.checked && state.movement.overrides[id]){ pathModeSel.value=state.movement.overrides[id].mode; curvSel.value=state.movement.overrides[id].curv; curvSelVal.textContent=(+curvSel.value).toFixed(2); } }
 
-// when creating ball:
-// new Sprite(TOTAL_LEN/2, TOTAL_WID/2, '', '#ffa500', {isBall:true})
-// …
-//function getBall(){ return sprites.find(s=>s.isBall); }
-// after defining getBall(), initialize a helper store:
-//const ball = getBall(); 
-//if (ball) ball.lastDetachedFromId = null;
+
 (getBall() || {}).lastDetachedFromId = null;
 
 // ===== Timeline / Snapshots =====
