@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>High School Court — Screen Bubble</title>
@@ -34,11 +35,22 @@
   .action-menu small{color:#9ca3af}
   .action-menu .x{background:transparent;border:none;color:#94a3b8;font-weight:700;cursor:pointer;padding:2px 6px;border-radius:6px}
   .action-menu .x:hover{background:#111827;color:#e5e7eb}
+  #controlsBody {
+    overflow: hidden;       /* Hide overflowing content */
+    transition: height 0.3s ease; /* Smooth animation */
+}
 </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="panel">
+    <div class="panel" id="controlsPanel">
+      <!-- Collapsible header -->
+      <div class="panel-head">
+        <button id="toggleControls" class="collapse-btn" aria-expanded="true" aria-controls="controlsBody">
+          <i class="fa-solid fa-eye"></i>
+        </button>
+      </div>
+        <div id="controlsBody" class="panel-body">
       <div class="row">
         <button id="capture">Capture Step (C)</button>
         <button id="insertStep" title="Insert a new step after the selected step">Insert Step</button>
@@ -104,59 +116,61 @@
               class="value" id="curvSelVal">0.80</span></label>
         </div>
       </div>
-        <div class="row" style="margin-top: 10px;">
-          <button id="save">⬇ Download Track (JSON)</button>
-          <button id="libExport">Export JSON</button>
-          <input id="libImport" type="file" accept="application/json" style="display:none" />
-          <button id="libImportBtn">Import JSON</button>
-          <button id="exportPng">📷 Export PNG</button>
-
-          <input id="load" type="file" accept="application/json" />
-          <button style="display:none" id="clear">🗑 Clear Track</button>
-          <span class="spacer"></span>
-          <span id="status">Ready</span>
-        </div>
-        <div class="row" style="align-items:flex-end; margin-top:8px">
-          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
-            <label style="display:flex; flex-direction:column; gap:4px">
-              <input id="libName" type="text" placeholder="Name Play e.g., Horns Flare" style="width:200px; height: 2em;" />
-            </label>
-            <button id="libSave">Save As</button>
-            <button id="libUpdate" title="Save current into selected name">Update</button>
-            <button id="libLoad">Load</button>
-            <button id="libDup">Duplicate</button>
-            <button id="libRen">Rename</button>
-            <button id="libDel">Delete</button>
-          </div>
-        </div>
-        <div class="row" style="align-items:flex-end; margin-top:8px">
-          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
-            <label style="display:flex; flex-direction:column; gap:4px">
-              <select id="libSelect" style="width:240px">
-                 <option value="" disabled selected>— No saved plays —</option>
-                 <option value="lib" disabled>— Library  —</option>
-              </select>
-            </label>
-          </div>
-        </div>
-        <div id="timeline" class="timeline" title="Click a step to jump"></div>
-        
-  <!-- <div style="font-size:11px;color:#9ca3af;margin-left:auto">
-    Shortcuts: <span class="kbd">⌘/Ctrl+S</span> Save As, <span class="kbd">⌘/Ctrl+O</span> Open
-  </div> -->
-</div>
-<div style="display:none" id="timeline" class="timeline" title="Click a step to jump"></div>
-
-    </div>
-
-    <canvas id="court"></canvas>
-
-    <div class="panel" style="margin-top:12px">
-      <div style="font-size:12px;color:#9ca3af">
-        Shortcuts: <span class="kbd">C</span> capture, <span class="kbd">Z</span> undo, <span class="kbd">Space</span> play/pause, <span class="kbd">←/→</span> prev/next. Drag the <strong>ball</strong> (Shift to detach). Click a <strong>player</strong> to select.
-        After you drag and release a player, an inline action menu appears. Hotkeys: <span class="kbd">1</span> Straight, <span class="kbd">2</span> Random (Shift+2 Inward), <span class="kbd">3</span> Mimic, <span class="kbd">4</span> Screen.
+      <div class="row" style="margin-top: 10px;">
+        <button id="save">⬇ Download Track (JSON)</button>
+        <button id="libExport">Export JSON</button>
+        <input id="libImport" type="file" accept="application/json" style="display:none" />
+        <button id="libImportBtn">Import JSON</button>
+        <button id="exportPng">📷 Export PNG</button>
+  
+        <input id="load" type="file" accept="application/json" />
+        <button style="display:none" id="clear">🗑 Clear Track</button>
+        <span class="spacer"></span>
+        <span id="status">Ready</span>
       </div>
+      <div class="row" style="align-items:flex-end; margin-top:8px">
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+          <label style="display:flex; flex-direction:column; gap:4px">
+            <input id="libName" type="text" placeholder="Name Play e.g., Horns Flare" style="width:200px; height: 2em;" />
+          </label>
+          <button id="libSave">Save As</button>
+          <button id="libUpdate" title="Save current into selected name">Update</button>
+          <button id="libLoad">Load</button>
+          <button id="libDup">Duplicate</button>
+          <button id="libRen">Rename</button>
+          <button id="libDel">Delete</button>
+        </div>
+      </div>
+      <div class="row" style="align-items:flex-end; margin-top:8px">
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+          <label style="display:flex; flex-direction:column; gap:4px">
+            <select id="libSelect" style="width:240px">
+              <option value="" disabled selected>— No saved plays —</option>
+              <option value="lib" disabled>— Library —</option>
+            </select>
+          </label>
+        </div>
+      </div>
+  
+      <!-- <div style="font-size:11px;color:#9ca3af;margin-left:auto">
+      Shortcuts: <span class="kbd">⌘/Ctrl+S</span> Save As, <span class="kbd">⌘/Ctrl+O</span> Open
+    </div> -->
+    </div></div>
+    <div id="timeline" class="timeline" title="Click a step to jump"></div>
+  </div>
+  
+  <canvas id="court"></canvas>
+  
+  <div class="panel" style="margin-top:12px">
+    <div style="font-size:12px;color:#9ca3af">
+      Shortcuts: <span class="kbd">C</span> capture, <span class="kbd">Z</span> undo, <span class="kbd">Space</span>
+      play/pause, <span class="kbd">←/→</span> prev/next. Drag the <strong>ball</strong> (Shift to detach). Click a
+      <strong>player</strong> to select.
+      After you drag and release a player, an inline action menu appears. Hotkeys: <span class="kbd">1</span> Straight,
+      <span class="kbd">2</span> Random (Shift+2 Inward), <span class="kbd">3</span> Mimic, <span class="kbd">4</span>
+      Screen.
     </div>
+  </div>
   </div>
 
 <script>
@@ -179,16 +193,6 @@ function attachDial(el, {values, labels, defaultIndex=0, onChange, title}){
     const d=`M ${p0.x} ${p0.y} A 30 30 0 ${large} 1 ${p.x} ${p.y}`; arc.setAttribute('d',d); knob.setAttribute('cx',p.x); knob.setAttribute('cy',p.y); read.textContent=labels[idx]; }
   function setIndex(i){ idx=Math.max(0,Math.min(values.length-1,i)); draw(); if(onChange) onChange(values[idx], labels[idx]); }
 
-  //   // Convert client (CSS) coordinates to the canvas's internal pixel coordinates
-  // function toCanvasXY(evt){
-  //   const rect = canvas.getBoundingClientRect();
-  //   const sx = canvas.width  / rect.width;
-  //   const sy = canvas.height / rect.height;
-  //   return {
-  //     mx: (evt.clientX - rect.left) * sx,
-  //     my: (evt.clientY - rect.top)  * sy
-  //   };
-  // }
 
   let dragging=false;
   svg.addEventListener('mousedown', (e)=>{ dragging=true; handle(e); });
@@ -405,6 +409,19 @@ function deleteStepAt(idx){
   }
   if (idx < 0 || idx >= state.track.length){ return; }
 
+ 
+function buttonToggleAt(spanElement) {
+    const style = window.getComputedStyle(spanElement);
+    const visibility = style.getPropertyValue('visibility');
+
+    if (visibility === 'visible') {
+        return 'visible';
+    } else if (visibility === 'hidden') {
+        return 'hidden';
+    } else {
+        return 'not-set'; // Default (inherited or not explicitly set)
+    }
+}
   // stop any playback and clear in-flight segment
   state.isPlaying = false;
   state.passPlan = null;
@@ -746,6 +763,9 @@ const chkOnion=document.getElementById('onion');
 const chkEase=document.getElementById('ease');
 const btnInsert  = document.getElementById('insertStep');
 const btnDelete  = document.getElementById('deleteStep');
+const btnToggle  = document.getElementById('toggleControls');
+const btnToggleBody  = document.getElementById('controlsBody');
+
 
 // helper: distance moved check (exists guard for double-includes)
 if (typeof movedMoreThan !== 'function') {
@@ -1327,6 +1347,21 @@ btnDelete?.addEventListener('click', (e)=>{
   e.preventDefault(); e.stopPropagation();
   deleteStepAt(state.index|0);
 });
+
+btnToggle?.addEventListener('click', function() {
+    const isCollapsed = btnToggleBody.style.height === '0px';
+    
+    if (isCollapsed) {
+        btnToggleBody.style.height = 'auto'; // Expand
+        btnToggleBody.style.visibility = 'visible';
+        btnToggle.innerHTML = '<i class="fa-solid fa-eye-slash"></i>'; // Visible state icon
+    } else {
+        btnToggleBody.style.height = '0'; // Collapse
+        btnToggleBody.style.visibility = 'hidden';
+        btnToggle.innerHTML = '<i class="fa-solid fa-eye"></i>'; // Hidden state icon
+    }
+});
+
 
 // ===== Named Library (localStorage) =====
 const LIB_KEY = 'play_library_v1';
